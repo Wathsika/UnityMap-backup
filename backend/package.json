@@ -8,7 +8,8 @@
     "dev": "nodemon src/server.js",
     "test:db": "node src/config/db.js",
     "seed:speech": "node src/seed/seedSpeechAudio.js",
-    "seed:staff": "node src/seed/seedStaffCredentials.js"
+    "seed:staff": "node src/seed/seedStaffCredentials.js",
+    "seed:places": "node src/seed/seedPlaces.js"
   },
   "keywords": [
     "unitymap",
