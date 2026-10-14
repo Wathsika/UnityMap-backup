@@ -8,8 +8,9 @@ import { getTextStyle, textProps } from '../../theme/typography';
  * Get the appropriate icon and color for a specific wheelchair maneuver.
  */
 export const getManeuverIcon = (maneuver, isHighContrast = false) => {
-  const defaultColor = isHighContrast ? '#000000' : '#FFFFFF';
-  const highContrastBg = isHighContrast ? '#FFFFFF' : '#0B3D2E';
+  // HC: white glyphs on blue (#005A91) primary background — 7.3:1 contrast
+  const defaultColor = '#FFFFFF';
+  const highContrastBg = isHighContrast ? '#005A91' : '#0B3D2E';
 
   switch (maneuver) {
     case 'turn-left':
@@ -94,9 +95,13 @@ export const TurnByTurnCard = ({
   const isSafeSlope = slopeVal <= 5.0;
   const isCautionSlope = slopeVal > 5.0 && slopeVal <= 8.0;
 
-  // Slope Tag Color Palette aligned with app tokens
+  // Slope Tag Color Palette aligned with app tokens (CVD-safe HC accents)
   const slopeColor = isHighContrast
-    ? { bg: '#FFFFFF', text: '#000000', border: '#000000' }
+    ? isSafeSlope
+      ? { bg: palette.successBg, text: palette.success, border: palette.success }
+      : isCautionSlope
+      ? { bg: palette.warningBg, text: palette.warning, border: palette.warning }
+      : { bg: palette.errorBg, text: palette.error, border: palette.error }
     : isSafeSlope
     ? { bg: '#DCFCE7', text: '#15803D', border: '#86EFAC' }
     : isCautionSlope
@@ -123,9 +128,9 @@ export const TurnByTurnCard = ({
           style={[
             styles.stepBadge,
             {
-              backgroundColor: isHighContrast ? '#000000' : '#DCFCE7',
-              borderColor: isHighContrast ? '#000000' : '#86EFAC',
-              borderWidth: isHighContrast ? 1 : 1,
+              backgroundColor: isHighContrast ? palette.successBg : '#DCFCE7',
+              borderColor: isHighContrast ? palette.success : '#86EFAC',
+              borderWidth: isHighContrast ? 2 : 1,
             },
           ]}
         >
@@ -133,7 +138,7 @@ export const TurnByTurnCard = ({
             {...textProps}
             style={[
               styles.stepBadgeText,
-              { color: isHighContrast ? '#FFFFFF' : '#15803D' },
+              { color: isHighContrast ? palette.success : '#15803D' },
             ]}
           >
             STEP {stepIndex + 1} OF {totalSteps}
@@ -153,10 +158,10 @@ export const TurnByTurnCard = ({
               styles.audioButton,
               {
                 backgroundColor: isSpeaking
-                  ? (isHighContrast ? '#000000' : '#0B3D2E')
+                  ? (isHighContrast ? palette.primary : '#0B3D2E')
                   : palette.secondaryBg,
-                borderColor: palette.cardBorder,
-                borderWidth,
+                borderColor: isSpeaking && isHighContrast ? '#000000' : palette.cardBorder,
+                borderWidth: isHighContrast && isSpeaking ? 2 : borderWidth,
               },
             ]}
           >
@@ -184,7 +189,7 @@ export const TurnByTurnCard = ({
           style={[
             styles.maneuverIconBox,
             {
-              backgroundColor: isHighContrast ? '#000000' : maneuverData.bg,
+              backgroundColor: isHighContrast ? palette.primary : maneuverData.bg,
               borderColor: isHighContrast ? '#000000' : '#0B3D2E',
               borderWidth: isHighContrast ? 2 : 1,
             },
@@ -200,7 +205,7 @@ export const TurnByTurnCard = ({
               style={[
                 styles.distanceLargeText,
                 getTextStyle('xl', { isHighContrast }),
-                { color: isHighContrast ? '#000000' : '#0B3D2E' },
+                { color: isHighContrast ? palette.primary : '#0B3D2E' },
               ]}
             >
               {step.distanceText || `${step.distanceMeters || 0} m`}
@@ -237,7 +242,7 @@ export const TurnByTurnCard = ({
             {
               backgroundColor: slopeColor.bg,
               borderColor: slopeColor.border,
-              borderWidth: 1,
+              borderWidth: isHighContrast ? 2 : 1,
             },
           ]}
         >
@@ -285,21 +290,21 @@ export const TurnByTurnCard = ({
             style={[
               styles.tagBadge,
               {
-                backgroundColor: isHighContrast ? '#FFFFFF' : '#ECFDF5',
-                borderColor: isHighContrast ? '#000000' : '#A7F3D0',
-                borderWidth: 1,
+                backgroundColor: isHighContrast ? palette.successBg : '#ECFDF5',
+                borderColor: isHighContrast ? palette.success : '#A7F3D0',
+                borderWidth: isHighContrast ? 2 : 1,
               },
             ]}
           >
             <MaterialIcons
               name="elevator"
               size={14}
-              color={isHighContrast ? '#000000' : '#059669'}
+              color={isHighContrast ? palette.success : '#059669'}
             />
             <Text
               style={[
                 styles.tagBadgeText,
-                { color: isHighContrast ? '#000000' : '#047857' },
+                { color: isHighContrast ? palette.success : '#047857' },
               ]}
             >
               {step.elevatorName}

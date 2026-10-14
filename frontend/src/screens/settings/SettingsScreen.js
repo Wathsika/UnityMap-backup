@@ -138,7 +138,7 @@ export const SettingsScreen = () => {
                 {
                   borderColor: isHighContrast ? '#000000' : '#DC2626',
                   borderWidth: isHighContrast ? 2 : 1,
-                  backgroundColor: '#DC2626',
+                  backgroundColor: isHighContrast ? palette.error : '#DC2626',
                   marginTop: 14,
                 },
               ]}

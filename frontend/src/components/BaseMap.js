@@ -60,9 +60,13 @@ const BaseMap = ({
 
   const themeBg = palette?.background || (isHighContrast ? '#FFFFFF' : '#E9F1EE');
   const surface = palette?.surface || '#FFFFFF';
-  const primary = palette?.primary || (isHighContrast ? '#000000' : '#1E6F50');
+  const primary = palette?.primary || (isHighContrast ? '#005A91' : '#1E6F50');
   const cardBorder = palette?.cardBorder || (isHighContrast ? '#000000' : '#F1F5F9');
   const textPrimary = palette?.textPrimary || (isHighContrast ? '#000000' : '#1E293B');
+  // CVD-safe semantic accents (HC) — fall back to standard map colors
+  const pinError = palette?.error || '#DC2626';
+  const pinWarning = palette?.warning || '#D97706';
+  const pinSuccess = palette?.success || '#10B981';
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Static HTML: tile layer, CSS, user-dot, markers, pathways.
@@ -125,28 +129,28 @@ const BaseMap = ({
       border-top: 6px solid currentColor;
     }
 
-    .pin-bubble.orange { background: ${isHighContrast ? '#000000' : '#F59E0B'}; color: ${isHighContrast ? '#000000' : '#F59E0B'}; ${isHighContrast ? 'border: 2px solid #000000;' : ''} }
+    .pin-bubble.orange { background: ${isHighContrast ? pinWarning : '#F59E0B'}; color: ${isHighContrast ? pinWarning : '#F59E0B'}; ${isHighContrast ? 'border: 2px solid #000000;' : ''} }
     .pin-bubble.orange svg { stroke: #FFFFFF; fill: none; }
 
-    .pin-bubble.red { background: ${isHighContrast ? '#000000' : '#EF4444'}; color: ${isHighContrast ? '#000000' : '#EF4444'}; ${isHighContrast ? 'border: 2px solid #000000;' : ''} }
+    .pin-bubble.red { background: ${isHighContrast ? pinError : '#EF4444'}; color: ${isHighContrast ? pinError : '#EF4444'}; ${isHighContrast ? 'border: 2px solid #000000;' : ''} }
     .pin-bubble.red svg { stroke: #FFFFFF; fill: #FFFFFF; }
 
-    .pin-bubble.green { background: ${isHighContrast ? '#000000' : '#10B981'}; color: ${isHighContrast ? '#000000' : '#10B981'}; ${isHighContrast ? 'border: 2px solid #000000;' : ''} }
+    .pin-bubble.green { background: ${isHighContrast ? pinSuccess : '#10B981'}; color: ${isHighContrast ? pinSuccess : '#10B981'}; ${isHighContrast ? 'border: 2px solid #000000;' : ''} }
     .pin-bubble.green svg { stroke: #FFFFFF; fill: none; }
 
-    .pin-bubble.amber { background: ${isHighContrast ? '#000000' : '#D97706'}; color: ${isHighContrast ? '#000000' : '#D97706'}; ${isHighContrast ? 'border: 2px solid #000000;' : ''} }
+    .pin-bubble.amber { background: ${isHighContrast ? pinWarning : '#D97706'}; color: ${isHighContrast ? pinWarning : '#D97706'}; ${isHighContrast ? 'border: 2px solid #000000;' : ''} }
     .pin-bubble.amber svg { stroke: #FFFFFF; fill: none; }
 
-    .pin-bubble.node { background: ${isHighContrast ? '#000000' : '#059669'}; color: ${isHighContrast ? '#000000' : '#059669'}; ${isHighContrast ? 'border: 2px solid #FFFFFF;' : ''} }
+    .pin-bubble.node { background: ${isHighContrast ? pinSuccess : '#059669'}; color: ${isHighContrast ? pinSuccess : '#059669'}; ${isHighContrast ? 'border: 2px solid #000000;' : ''} }
     .pin-bubble.node svg { stroke: #FFFFFF; fill: none; }
 
-    .pin-bubble.elevator { background: ${isHighContrast ? '#000000' : '#065F46'}; color: ${isHighContrast ? '#000000' : '#065F46'}; ${isHighContrast ? 'border: 2px solid #FFFFFF;' : ''} }
+    .pin-bubble.elevator { background: ${isHighContrast ? pinSuccess : '#065F46'}; color: ${isHighContrast ? pinSuccess : '#065F46'}; ${isHighContrast ? 'border: 2px solid #000000;' : ''} }
     .pin-bubble.elevator svg { stroke: #FFFFFF; fill: none; }
 
-    .pin-bubble.obstacle { background: ${isHighContrast ? '#000000' : '#DC2626'}; color: ${isHighContrast ? '#000000' : '#DC2626'}; ${isHighContrast ? 'border: 2px solid #FFFFFF;' : ''} }
+    .pin-bubble.obstacle { background: ${isHighContrast ? pinError : '#DC2626'}; color: ${isHighContrast ? pinError : '#DC2626'}; ${isHighContrast ? 'border: 2px solid #000000;' : ''} }
     .pin-bubble.obstacle svg { stroke: #FFFFFF; fill: none; }
 
-    .pin-bubble.destination { background: ${isHighContrast ? '#000000' : '#0B3D2E'}; color: ${isHighContrast ? '#000000' : '#0B3D2E'}; ${isHighContrast ? 'border: 2px solid #FFFFFF;' : ''} }
+    .pin-bubble.destination { background: ${isHighContrast ? primary : '#0B3D2E'}; color: ${isHighContrast ? primary : '#0B3D2E'}; ${isHighContrast ? 'border: 2px solid #000000;' : ''} }
     .pin-bubble.destination svg { stroke: #FFFFFF; fill: none; }
 
     /* Floating label tags above pins */
@@ -183,7 +187,7 @@ const BaseMap = ({
       height: 0;
       border-left: 7px solid transparent;
       border-right: 7px solid transparent;
-      border-bottom: 16px solid ${isHighContrast ? '#000000' : '#059669'};
+      border-bottom: 16px solid ${isHighContrast ? pinSuccess : '#059669'};
       top: -4px;
       left: 11px;
       transform-origin: center 18px;
@@ -195,9 +199,9 @@ const BaseMap = ({
       width: 22px;
       height: 22px;
       background: #FFFFFF;
-      border: 4px solid ${isHighContrast ? '#000000' : '#059669'};
+      border: 4px solid ${isHighContrast ? pinSuccess : '#059669'};
       border-radius: 50%;
-      box-shadow: ${isHighContrast ? '0 0 0 2px #000000, 0 0 0 6px rgba(0,0,0,0.6)' : '0 0 0 5px rgba(5, 150, 105, 0.3), 0 3px 8px rgba(0,0,0,0.3)'};
+      box-shadow: ${isHighContrast ? `0 0 0 2px #000000, 0 0 0 6px rgba(0,0,0,0.6)` : '0 0 0 5px rgba(5, 150, 105, 0.3), 0 3px 8px rgba(0,0,0,0.3)'};
       animation: ${isReduceMotionEnabled ? 'none' : isHighContrast ? 'none' : 'pulse 2.2s infinite'};
     }
     @keyframes pulse {
@@ -528,6 +532,9 @@ const BaseMap = ({
     primary,
     cardBorder,
     textPrimary,
+    pinError,
+    pinWarning,
+    pinSuccess,
     isHighContrast,
     markers,
     pathways,

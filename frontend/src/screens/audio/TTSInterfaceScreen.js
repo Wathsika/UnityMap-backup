@@ -2,16 +2,21 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
+import { useTheme } from '../../theme/ThemeContext';
+import { getTextStyle, textProps } from '../../theme/typography';
 
 /**
  * Text-to-Speech Interface Screen
  */
 export const TTSInterfaceScreen = () => {
+  const { palette, borderWidth, isHighContrast } = useTheme();
   return (
-    <View style={styles.container}>
-      <Card style={styles.card}>
-        <Text style={styles.title}>🔊 TTS & Audio Feedback</Text>
-        <Text style={styles.description}>
+    <View style={[styles.container, { backgroundColor: palette.background }]}>
+      <Card style={[styles.card, { borderColor: isHighContrast ? palette.success : '#A7F3D0', borderWidth: isHighContrast ? borderWidth : 1 }]}>
+        <Text {...textProps} style={[styles.title, getTextStyle('xl', { isHighContrast }), { color: palette.textPrimary }]}>
+          🔊 TTS & Audio Feedback
+        </Text>
+        <Text {...textProps} style={[styles.description, getTextStyle('sm', { isHighContrast }), { color: palette.textSecondary }]}>
           Customizable text-to-speech settings, audio ducking, pitch adjustment, and screen-reader accessibility shortcuts.
         </Text>
         <Button title="Test Voice Output" variant="secondary" onPress={() => {}} />
