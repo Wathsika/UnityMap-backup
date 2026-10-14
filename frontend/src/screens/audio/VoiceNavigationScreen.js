@@ -143,8 +143,17 @@ export const VoiceNavigationScreen = ({
                 {displayTranscript}
               </Text>
               {confidence > 0 && (
-                <View style={[styles.confBadge, { backgroundColor: confidence >= 0.6 ? '#ECFDF5' : '#FEF3C7', borderColor: palette.border }]}>
-                  <Text style={[getTextStyle('xs', { isHighContrast }), { color: confidence >= 0.6 ? '#065F46' : '#92400E' }]}>
+                <View
+                  style={[
+                    styles.confBadge,
+                    {
+                      backgroundColor: confidence >= 0.6 ? palette.successBg : palette.warningBg,
+                      borderColor: confidence >= 0.6 ? palette.success : palette.warning,
+                      borderWidth: isHighContrast ? borderWidth : 1,
+                    },
+                  ]}
+                >
+                  <Text style={[getTextStyle('xs', { isHighContrast }), { color: confidence >= 0.6 ? palette.success : palette.warning }]}>
                     {Math.round(confidence * 100)}% confidence
                   </Text>
                 </View>

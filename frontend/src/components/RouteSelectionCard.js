@@ -56,7 +56,7 @@ export const RouteSelectionCard = ({
   routeOrigin,           // { latitude, longitude } fallback if GPS unavailable
   obstacles = [],        // Full obstacle list; filtered to nearby ones in here
 }) => {
-  const { isHighContrast } = useTheme();
+  const { isHighContrast, palette } = useTheme();
 
   // Real distance computed from user location → tapped point (like Google Maps)
   const [computedDistance, setComputedDistance] = useState(null);
@@ -112,10 +112,17 @@ export const RouteSelectionCard = ({
 
   // ── Slope colour theme ───────────────────────────────────────────────────
   const getSlopeColors = () => {
-    if (isHighContrast) {
-      return { bg: '#000000', border: '#FFFFFF', text: '#FFFFFF', icon: '#FFFFFF', bw: 2 };
-    }
     const s = (slopeStatus || '').toLowerCase();
+    if (isHighContrast) {
+      // CVD-safe semantic accents on white (vermillion / amber / bluish-green)
+      if (slopeLevel === 'hazard' || s.includes('hazard')) {
+        return { bg: palette.errorBg, border: palette.error, text: palette.error, icon: palette.error, bw: 2 };
+      }
+      if (slopeLevel === 'caution' || s.includes('caution')) {
+        return { bg: palette.warningBg, border: palette.warning, text: palette.warning, icon: palette.warning, bw: 2 };
+      }
+      return { bg: palette.successBg, border: palette.success, text: palette.success, icon: palette.success, bw: 2 };
+    }
     if (slopeLevel === 'caution' || s.includes('caution')) {
       return { bg: '#36240E', border: '#B45309', text: '#FDE68A', icon: '#F59E0B', bw: 1 };
     }
@@ -130,7 +137,9 @@ export const RouteSelectionCard = ({
   // ── Lift badge colour theme ──────────────────────────────────────────────
   const getLiftColors = (operational) => {
     if (isHighContrast) {
-      return { bg: '#000000', border: '#FFFFFF', text: '#FFFFFF', icon: '#FFFFFF' };
+      return operational
+        ? { bg: palette.successBg, border: palette.success, text: palette.success, icon: palette.success }
+        : { bg: palette.errorBg, border: palette.error, text: palette.error, icon: palette.error };
     }
     if (!operational) {
       return { bg: '#361E1E', border: '#991B1B', text: '#FCA5A5', icon: '#EF4444' };
@@ -182,22 +191,22 @@ export const RouteSelectionCard = ({
               style={[
                 tw`self-start px-2 py-0.5 rounded`,
                 {
-                  backgroundColor: isSelected ? '#143823' : '#2A2A2A',
-                  borderColor: isSelected ? '#2E8B57' : 'transparent',
-                  borderWidth: isSelected ? 1 : 0,
+                  backgroundColor: isHighContrast ? palette.surface : isSelected ? '#143823' : '#2A2A2A',
+                  borderColor: isHighContrast ? palette.success : isSelected ? '#2E8B57' : 'transparent',
+                  borderWidth: isHighContrast ? 2 : isSelected ? 1 : 0,
                 },
               ]}
             >
-              <Text style={tw`text-gray-400 text-xs font-bold tracking-wide uppercase`}>
+              <Text style={[tw`text-gray-400 text-xs font-bold tracking-wide uppercase`, isHighContrast && { color: palette.success }]}>
                 {routeCode}
               </Text>
             </View>
           ) : null}
 
           {isSelected && (
-            <View style={tw`flex-row items-center gap-1 bg-green-950 px-2 py-0.5 rounded`}>
-              <MaterialIcons name="check-circle" size={16} color="#2E8B57" />
-              <Text style={tw`text-green-400 text-xs font-bold`}>Active</Text>
+            <View style={[tw`flex-row items-center gap-1 bg-green-950 px-2 py-0.5 rounded`, isHighContrast && { backgroundColor: palette.successBg, borderWidth: 2, borderColor: palette.success }]}>
+              <MaterialIcons name="check-circle" size={16} color={isHighContrast ? palette.success : '#2E8B57'} />
+              <Text style={[tw`text-green-400 text-xs font-bold`, isHighContrast && { color: palette.success }]}>Active</Text>
             </View>
           )}
         </View>
@@ -311,7 +320,7 @@ export const RouteSelectionCard = ({
         {/* ── Nearby Obstacle Badges (ONLY when tappedLocation is set AND obstacles found) */}
         {nearbyObstacles.length > 0 && (
           <View style={tw`mt-1`}>
-            <Text style={tw`text-red-400 text-xs font-bold mb-1 uppercase tracking-wide`}>
+            <Text style={[tw`text-red-400 text-xs font-bold mb-1 uppercase tracking-wide`, isHighContrast && { color: palette.error }]}>
               ⚠ Obstacles near tapped location
             </Text>
             {nearbyObstacles.map((obs) => (
@@ -319,11 +328,13 @@ export const RouteSelectionCard = ({
                 key={obs.id ?? obs._id}
                 style={[
                   tw`flex-row items-center rounded-xl px-3 py-2 gap-2 mb-1`,
-                  { backgroundColor: '#3B0918', borderColor: '#B91C1C', borderWidth: 1 },
+                  isHighContrast
+                    ? { backgroundColor: palette.errorBg, borderColor: palette.error, borderWidth: 2 }
+                    : { backgroundColor: '#3B0918', borderColor: '#B91C1C', borderWidth: 1 },
                 ]}
               >
-                <MaterialCommunityIcons name="alert-circle" size={16} color="#EF4444" />
-                <Text style={tw`text-red-300 text-xs font-semibold flex-1`}>
+                <MaterialCommunityIcons name="alert-circle" size={16} color={isHighContrast ? palette.error : '#EF4444'} />
+                <Text style={[tw`text-red-300 text-xs font-semibold flex-1`, isHighContrast && { color: palette.error }]}>
                   {obs.title ?? obs.type ?? 'Obstacle nearby'}
                 </Text>
               </View>
@@ -367,7 +378,7 @@ export const RouteSelectionCard = ({
         style={[
           tw`flex-row items-center justify-center rounded-xl py-3 px-5 gap-2`,
           isHighContrast
-            ? { backgroundColor: '#FFFFFF', borderColor: '#FFFFFF', borderWidth: 2, minHeight: 48 }
+            ? { backgroundColor: palette.primary, borderColor: '#000000', borderWidth: 2, minHeight: 48 }
             : {
                 backgroundColor: '#2E8B57',
                 minHeight: 48,
@@ -382,12 +393,12 @@ export const RouteSelectionCard = ({
         <Text
           style={[
             tw`text-sm font-bold tracking-wide`,
-            { color: isHighContrast ? '#000000' : '#FFFFFF' },
+            { color: '#FFFFFF' },
           ]}
         >
           Select Route
         </Text>
-        <MaterialIcons name="arrow-forward" size={19} color={isHighContrast ? '#000000' : '#FFFFFF'} />
+        <MaterialIcons name="arrow-forward" size={19} color="#FFFFFF" />
       </TouchableOpacity>
     </TouchableOpacity>
   );

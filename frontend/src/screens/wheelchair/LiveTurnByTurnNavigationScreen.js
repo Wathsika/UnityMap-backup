@@ -457,8 +457,8 @@ export const LiveTurnByTurnNavigationScreen = ({
         id: route?.id || 'active_turn_route',
         title: route?.title || 'Accessible Main Path',
         coordinates: routeCoordinates,
-        color: isHighContrast ? '#000000' : '#10B981',
-        accentColor: isHighContrast ? '#000000' : '#0B3D2E',
+        color: isHighContrast ? '#00664D' : '#10B981',
+        accentColor: isHighContrast ? '#005A91' : '#0B3D2E',
         isSelected: true,
       },
     ];
@@ -519,13 +519,13 @@ export const LiveTurnByTurnNavigationScreen = ({
                 style={[
                   styles.statusPill,
                   isNavigating
-                    ? { backgroundColor: isHighContrast ? '#FFFFFF' : '#DCFCE7', borderColor: isHighContrast ? '#000000' : '#86EFAC' }
+                    ? { backgroundColor: isHighContrast ? palette.successBg : '#DCFCE7', borderColor: isHighContrast ? palette.success : '#86EFAC' }
                     : { backgroundColor: palette.secondaryBg, borderColor: palette.cardBorder },
                   { borderWidth },
                 ]}
               >
-                <View style={[styles.pulseDot, { backgroundColor: isNavigating ? (isHighContrast ? '#000000' : '#16A34A') : palette.textMuted }]} />
-                <Text style={[styles.statusPillText, { color: isNavigating ? (isHighContrast ? '#000000' : '#15803D') : palette.textMuted }]}>
+                <View style={[styles.pulseDot, { backgroundColor: isNavigating ? (isHighContrast ? palette.success : '#16A34A') : palette.textMuted }]} />
+                <Text style={[styles.statusPillText, { color: isNavigating ? (isHighContrast ? palette.success : '#15803D') : palette.textMuted }]}>
                   {hasArrived ? 'ARRIVED' : isNavigating ? 'NAVIGATING' : 'PRE-TRIP'}
                 </Text>
               </View>
@@ -562,7 +562,7 @@ export const LiveTurnByTurnNavigationScreen = ({
             <Feather
               name={isVoiceMuted ? 'volume-x' : 'volume-2'}
               size={20}
-              color={isVoiceMuted ? '#DC2626' : (isHighContrast ? '#000000' : '#15803D')}
+              color={isVoiceMuted ? (isHighContrast ? palette.error : '#DC2626') : (isHighContrast ? '#000000' : '#15803D')}
             />
           </TouchableOpacity>
         </View>
@@ -578,8 +578,8 @@ export const LiveTurnByTurnNavigationScreen = ({
             },
           ]}
         >
-          <View style={[styles.maneuverIconContainer, { backgroundColor: isHighContrast ? '#FFFFFF' : '#1E6F50' }]}>
-            {getManeuverIcon(currentStep?.maneuver, isHighContrast ? '#000000' : '#FFFFFF')}
+          <View style={[styles.maneuverIconContainer, { backgroundColor: isHighContrast ? palette.primary : '#1E6F50', borderWidth: isHighContrast ? 2 : 0, borderColor: '#000000' }]}>
+            {getManeuverIcon(currentStep?.maneuver, isHighContrast)}
           </View>
           <View style={styles.maneuverTextContainer}>
             <View style={styles.maneuverDistanceRow}>

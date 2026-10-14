@@ -85,7 +85,7 @@ export const CorroborateButton = ({
   }, [loading, disabled, corroborated, count, reportId, onSuccess]);
 
   const isActive = corroborated;
-  const backgroundColor = isActive ? (isHighContrast ? '#000000' : '#0B3D2E') : palette.surface;
+  const backgroundColor = isActive ? (isHighContrast ? palette.primary : '#0B3D2E') : palette.surface;
   const textColor = isActive ? '#FFFFFF' : palette.textPrimary;
   const borderColor = isActive ? (isHighContrast ? '#000000' : '#0B3D2E') : palette.secondaryBorder;
 

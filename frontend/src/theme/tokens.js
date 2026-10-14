@@ -2,6 +2,8 @@
  * UnityMap Design Tokens — SPT-005
  * Light + High-Contrast palettes, spacing, radius, borders, focus.
  * WCAG: light 4.5:1, high-contrast 7:1 with 2px borders + focus ring.
+ * High-contrast semantic accents use darkened Okabe-Ito hues (CVD-safe):
+ * vermillion (error), bluish-green (success), amber (warning), blue (info/primary).
  */
 
 export const spacing = {
@@ -39,6 +41,12 @@ export const palettes = {
     placeholder: '#6B7280',
     error: '#B91C1C',
     errorBg: '#FEF2F2',
+    success: '#047857',
+    successBg: '#ECFDF5',
+    warning: '#B45309',
+    warningBg: '#FFFBEB',
+    info: '#0369A1',
+    infoBg: '#F0F9FF',
     focusRing: '#FFD400',
     cardBorder: '#E5E7EB',
   },
@@ -49,7 +57,7 @@ export const palettes = {
     textPrimary: '#000000',
     textSecondary: '#000000',
     textMuted: '#000000',
-    primary: '#000000',
+    primary: '#005A91',
     primaryText: '#FFFFFF',
     secondaryBg: '#FFFFFF',
     secondaryText: '#000000',
@@ -57,8 +65,14 @@ export const palettes = {
     border: '#000000',
     borderStrong: '#000000',
     placeholder: '#000000',
-    error: '#000000',
+    error: '#A84800',
     errorBg: '#FFFFFF',
+    success: '#00795C',
+    successBg: '#FFFFFF',
+    warning: '#8A6100',
+    warningBg: '#FFFFFF',
+    info: '#0069A8',
+    infoBg: '#FFFFFF',
     focusRing: '#FFD400',
     cardBorder: '#000000',
   },

@@ -15,10 +15,12 @@ import authService, { USER_ROLES } from '../services/authService';
 import LoginScreen from '../screens/auth/LoginScreen';
 import UnityMapScreen from '../screens/wheelchair/UnityMapScreen';
 import AdminPortalScaffoldScreen from '../screens/admin/AdminPortalScaffoldScreen';
+import { useTheme } from '../theme/ThemeContext';
 
 export const RootNavigator = () => {
   const [currentUser, setCurrentUser] = useState(authService.getCurrentUser());
   const [isInitializing, setIsInitializing] = useState(true);
+  const { isHighContrast, palette } = useTheme();
 
   useEffect(() => {
     // 1. Subscribe to auth changes
@@ -42,14 +44,14 @@ export const RootNavigator = () => {
   // Splash / Loading Screen during initial session check
   if (isInitializing) {
     return (
-      <View style={styles.splashContainer}>
-        <StatusBar barStyle="light-content" backgroundColor="#0B3D2E" />
-        <View style={styles.splashLogoCircle}>
+      <View style={[styles.splashContainer, isHighContrast && { backgroundColor: '#000000' }]}>
+        <StatusBar barStyle="light-content" backgroundColor={isHighContrast ? '#000000' : '#0B3D2E'} />
+        <View style={[styles.splashLogoCircle, isHighContrast && { borderWidth: 2, borderColor: '#FFFFFF' }]}>
           <Feather name="map-pin" size={36} color="#FFFFFF" />
         </View>
         <Text style={styles.splashTitle}>UnityMap</Text>
-        <Text style={styles.splashSubtitle}>Accessible Urban Mobility Platform</Text>
-        <ActivityIndicator color="#FFFFFF" size="large" style={{ marginTop: 24 }} />
+        <Text style={[styles.splashSubtitle, isHighContrast && { color: '#FFFFFF' }]}>Accessible Urban Mobility Platform</Text>
+        <ActivityIndicator color={isHighContrast ? palette.primary : '#FFFFFF'} size="large" style={{ marginTop: 24 }} />
       </View>
     );
   }

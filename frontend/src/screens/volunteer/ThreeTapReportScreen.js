@@ -35,6 +35,7 @@ const TOTAL_STEPS = 3;
 
 // Lightweight mini-map picker reusing BaseMap (Leaflet) — mirrors AdminAddReportModal MiniMapPicker
 const MiniMapPicker = ({ center, selected, onPick }) => {
+  const { palette, isHighContrast } = useTheme();
   const mapCenter = selected || center || { latitude: 6.9271, longitude: 79.8612 };
   const markers = selected ? [{ lat: selected.latitude, lng: selected.longitude, title: 'Selected Pin', type: 'destination' }] : [];
   const handleMapClick = useCallback(
@@ -51,7 +52,7 @@ const MiniMapPicker = ({ center, selected, onPick }) => {
   };
   return (
     <View style={miniMapStyles.container}>
-      <View style={miniMapStyles.mapFrame}>
+      <View style={[miniMapStyles.mapFrame, isHighContrast && { borderColor: '#000000', borderWidth: 2 }]}>
         <BaseMap
           center={[mapCenter.latitude, mapCenter.longitude]}
           markers={markers}
@@ -60,26 +61,26 @@ const MiniMapPicker = ({ center, selected, onPick }) => {
           style={{ height: 200, borderRadius: 12 }}
         />
         <View pointerEvents="none" style={miniMapStyles.crosshair}>
-          <Feather name="plus" size={18} color="#0F172A" style={{ opacity: 0.6 }} />
+          <Feather name="plus" size={18} color={isHighContrast ? '#000000' : '#0F172A'} style={{ opacity: isHighContrast ? 1 : 0.6 }} />
         </View>
       </View>
-      <View style={miniMapStyles.nudgeRow}>
-        <TouchableOpacity style={miniMapStyles.nudgeBtn} onPress={() => nudge(0.0005, 0)} accessibilityLabel="Nudge north">
-          <Feather name="chevron-up" size={14} color="#0F172A" />
+      <View style={[miniMapStyles.nudgeRow, isHighContrast && { backgroundColor: palette.surface, borderColor: '#000000', borderWidth: 2 }]}>
+        <TouchableOpacity style={[miniMapStyles.nudgeBtn, isHighContrast && { borderColor: '#000000', borderWidth: 2 }]} onPress={() => nudge(0.0005, 0)} accessibilityLabel="Nudge north">
+          <Feather name="chevron-up" size={14} color={isHighContrast ? '#000000' : '#0F172A'} />
         </TouchableOpacity>
         <View style={miniMapStyles.nudgeMiddle}>
-          <TouchableOpacity style={miniMapStyles.nudgeBtn} onPress={() => nudge(0, -0.0005)} accessibilityLabel="Nudge west">
-            <Feather name="chevron-left" size={14} color="#0F172A" />
+          <TouchableOpacity style={[miniMapStyles.nudgeBtn, isHighContrast && { borderColor: '#000000', borderWidth: 2 }]} onPress={() => nudge(0, -0.0005)} accessibilityLabel="Nudge west">
+            <Feather name="chevron-left" size={14} color={isHighContrast ? '#000000' : '#0F172A'} />
           </TouchableOpacity>
-          <View style={miniMapStyles.nudgeCenter}>
-            <Feather name="map-pin" size={16} color="#DC2626" />
+          <View style={[miniMapStyles.nudgeCenter, isHighContrast && { borderColor: '#000000', borderWidth: 2 }]}>
+            <Feather name="map-pin" size={16} color={isHighContrast ? palette.error : '#DC2626'} />
           </View>
-          <TouchableOpacity style={miniMapStyles.nudgeBtn} onPress={() => nudge(0, 0.0005)} accessibilityLabel="Nudge east">
-            <Feather name="chevron-right" size={14} color="#0F172A" />
+          <TouchableOpacity style={[miniMapStyles.nudgeBtn, isHighContrast && { borderColor: '#000000', borderWidth: 2 }]} onPress={() => nudge(0, 0.0005)} accessibilityLabel="Nudge east">
+            <Feather name="chevron-right" size={14} color={isHighContrast ? '#000000' : '#0F172A'} />
           </TouchableOpacity>
         </View>
-        <TouchableOpacity style={miniMapStyles.nudgeBtn} onPress={() => nudge(-0.0005, 0)} accessibilityLabel="Nudge south">
-          <Feather name="chevron-down" size={14} color="#0F172A" />
+        <TouchableOpacity style={[miniMapStyles.nudgeBtn, isHighContrast && { borderColor: '#000000', borderWidth: 2 }]} onPress={() => nudge(-0.0005, 0)} accessibilityLabel="Nudge south">
+          <Feather name="chevron-down" size={14} color={isHighContrast ? '#000000' : '#0F172A'} />
         </TouchableOpacity>
       </View>
     </View>
@@ -1399,7 +1400,7 @@ export const ThreeTapReportScreen = ({ onSuccess, onNavigateToMap, navigation })
               </Text>
               <View style={styles.locationBtnRow}>
                 <TouchableOpacity
-                  style={[styles.locationBtn, styles.locationBtnPrimary, { borderColor: '#0B3D2E', backgroundColor: '#0B3D2E' }]}
+                  style={[styles.locationBtn, styles.locationBtnPrimary, { borderColor: isHighContrast ? '#000000' : palette.primary, backgroundColor: palette.primary, borderWidth: isHighContrast ? borderWidth : undefined }]}
                   onPress={handleUseCurrentLocation}
                   disabled={fallbackLoading || submitting}
                   activeOpacity={0.7}
@@ -1531,16 +1532,20 @@ export const ThreeTapReportScreen = ({ onSuccess, onNavigateToMap, navigation })
             </Text>
             <View style={styles.conditionRow}>
               {[
-                { val: 'bad', label: 'Bad / Issue', icon: 'alert-triangle', color: '#DC2626', bg: '#FEF2F2', border: '#FCA5A5' },
-                { val: 'good', label: 'Good / Functional', icon: 'check-circle', color: '#059669', bg: '#ECFDF5', border: '#A7F3D0' },
+                { val: 'bad', label: 'Bad / Issue', icon: 'alert-triangle', color: '#DC2626', bg: '#FEF2F2', border: '#FCA5A5', hcColor: palette.error },
+                { val: 'good', label: 'Good / Functional', icon: 'check-circle', color: '#059669', bg: '#ECFDF5', border: '#A7F3D0', hcColor: palette.success },
               ].map((opt) => {
                 const selected = condition === opt.val;
+                const chipColor = isHighContrast ? opt.hcColor : opt.color;
                 return (
                   <TouchableOpacity
                     key={opt.val}
                     style={[
                       styles.conditionChip,
-                      { backgroundColor: selected ? opt.bg : palette.surface, borderColor: selected ? opt.color : palette.border },
+                      {
+                        backgroundColor: selected ? (isHighContrast ? palette.surface : opt.bg) : palette.surface,
+                        borderColor: selected ? chipColor : palette.border,
+                      },
                       selected && { borderWidth: 2 },
                     ]}
                     onPress={() => setCondition(opt.val)}
@@ -1550,9 +1555,9 @@ export const ThreeTapReportScreen = ({ onSuccess, onNavigateToMap, navigation })
                     accessibilityState={{ selected }}
                     hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                   >
-                    <Feather name={opt.icon} size={16} color={selected ? opt.color : palette.textMuted} />
-                    <Text style={[styles.conditionText, { color: selected ? opt.color : palette.textMuted, fontWeight: selected ? '800' : '600' }]}>{opt.label}</Text>
-                    {selected && <View style={[styles.conditionDot, { backgroundColor: opt.color }]} />}
+                    <Feather name={opt.icon} size={16} color={selected ? chipColor : palette.textMuted} />
+                    <Text style={[styles.conditionText, { color: selected ? chipColor : palette.textMuted, fontWeight: selected ? '800' : '600' }]}>{opt.label}</Text>
+                    {selected && <View style={[styles.conditionDot, { backgroundColor: chipColor }]} />}
                   </TouchableOpacity>
                 );
               })}
@@ -1664,12 +1669,12 @@ export const ThreeTapReportScreen = ({ onSuccess, onNavigateToMap, navigation })
           </View>
         )}
         {(pendingCount > 0 || syncingPending) && (
-          <View style={[styles.pendingBox, { backgroundColor: isHighContrast ? palette.surface : '#FFFBEB', borderColor: isHighContrast ? palette.borderStrong : '#FCD34D', borderWidth }]} accessible accessibilityLiveRegion="polite" accessibilityRole="alert">
-            <Text {...textProps} style={[styles.pendingText, getTextStyle('sm', { isHighContrast }), { color: isHighContrast ? palette.textPrimary : '#92400E' }]}>
+          <View style={[styles.pendingBox, { backgroundColor: isHighContrast ? palette.surface : palette.warningBg, borderColor: isHighContrast ? palette.warning : palette.warning, borderWidth: isHighContrast ? 2 : borderWidth }]} accessible accessibilityLiveRegion="polite" accessibilityRole="alert">
+            <Text {...textProps} style={[styles.pendingText, getTextStyle('sm', { isHighContrast }), { color: isHighContrast ? palette.warning : '#92400E' }]}>
               {syncingPending ? 'Syncing offline reports to database…' : `${pendingCount} offline report${pendingCount > 1 ? 's' : ''} cached — will sync to MongoDB when online.`}
             </Text>
             {!syncingPending && pendingCount > 0 && (
-              <TouchableOpacity onPress={syncOfflineQueue} disabled={submitting || syncingPending} accessibilityRole="button" accessibilityLabel="Sync offline reports now" style={styles.pendingSyncBtn}>
+              <TouchableOpacity onPress={syncOfflineQueue} disabled={submitting || syncingPending} accessibilityRole="button" accessibilityLabel="Sync offline reports now" style={[styles.pendingSyncBtn, isHighContrast && { backgroundColor: palette.primary, borderWidth: 2, borderColor: '#000000' }]}>
                 <Text style={styles.pendingSyncText}>Sync now</Text>
               </TouchableOpacity>
             )}
