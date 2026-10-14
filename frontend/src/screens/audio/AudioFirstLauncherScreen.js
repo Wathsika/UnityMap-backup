@@ -12,10 +12,10 @@ const LAUNCHER_PHRASE = 'Tap anywhere and speak your destination';
  * Full-screen touch launcher with TalkBack auto-detection, landmark tags.
  * Used as initial modal over UnityMapScreen when screen reader is active.
  */
-export const AudioFirstLauncherScreen = ({ onNavigate }) => {
+export const AudioFirstLauncherScreen = ({ onNavigate, searchHints = [] }) => {
   const { palette, borderWidth, isHighContrast, isScreenReaderEnabled, isReduceMotionEnabled, screenReaderName, announce, preferredSTTLocale } = useTheme();
   const { speak } = useSpeech();
-  const { isSupported, isListening, transcript, interimTranscript, confidence, error, start, stop } = useSpeechRecognition();
+  const { isSupported, isListening, transcript, interimTranscript, confidence, alternatives, error, start, stop } = useSpeechRecognition();
   const hasAnnouncedRef = useRef(false);
 
   // Auto-detect TalkBack/VoiceOver on launch and auto-prompt exact phrase
@@ -53,8 +53,9 @@ export const AudioFirstLauncherScreen = ({ onNavigate }) => {
           speak(`Heard ${transcript}`);
         } catch (_) {}
         if (onNavigate) {
-          // Pass transcript and confidence to parent (UnityMapScreen bridge)
-          onNavigate(transcript.trim(), confidence);
+          // Pass transcript, confidence, and STT alternatives to the parent
+          // (UnityMapScreen) — alternatives let place matching recover misheard names.
+          onNavigate(transcript.trim(), confidence, alternatives);
         }
       } else {
         try {
@@ -62,7 +63,7 @@ export const AudioFirstLauncherScreen = ({ onNavigate }) => {
         } catch (_) {}
       }
     }
-  }, [transcript, confidence, speak, onNavigate]);
+  }, [transcript, confidence, alternatives, speak, onNavigate]);
 
   const handlePress = async () => {
     if (isListening) {
@@ -76,7 +77,9 @@ export const AudioFirstLauncherScreen = ({ onNavigate }) => {
     }
     try {
       const locale = preferredSTTLocale || 'en';
-      await start(locale);
+      // Phrase hints: gazetteer names + recents + campus nodes (from parent)
+      // so the recognizer biases toward real place names.
+      await start(locale, { contextualStrings: searchHints });
     } catch (e) {
       setTimeout(() => {
         try { speak(LAUNCHER_PHRASE); } catch (_) {}

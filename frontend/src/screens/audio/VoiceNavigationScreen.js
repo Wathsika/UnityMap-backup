@@ -14,22 +14,29 @@ import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 export const VoiceNavigationScreen = ({
   initialTranscript = '',
   routeSummary: propRouteSummary = null,
+  matches = null,
+  selectedMatchId = null,
+  onSelectMatch,
+  onTranscriptChange,
+  searchHints = [],
   onConfirm,
   onCancel,
 }) => {
-  const { palette, borderWidth, isHighContrast, isReduceMotionEnabled } = useTheme();
+  const { palette, borderWidth, isHighContrast, isReduceMotionEnabled, preferredSTTLocale } = useTheme();
   const {
     isSupported,
     isListening,
     transcript,
     interimTranscript,
     confidence,
+    alternatives,
     error,
     start,
     stop: stopListening,
   } = useSpeechRecognition();
 
   const [localTranscript, setLocalTranscript] = useState(initialTranscript);
+  const [selectedId, setSelectedId] = useState(selectedMatchId);
 
   const displayTranscript = localTranscript || transcript;
   const effectiveRouteSummary = propRouteSummary || null;
@@ -68,8 +75,18 @@ export const VoiceNavigationScreen = ({
   }, [initialTranscript]);
 
   useEffect(() => {
-    if (transcript) setLocalTranscript(transcript);
-  }, [transcript]);
+    if (transcript) {
+      setLocalTranscript(transcript);
+      // New final transcript from re-recording → parent re-resolves candidates.
+      if (typeof onTranscriptChange === 'function') {
+        onTranscriptChange(transcript, confidence, alternatives);
+      }
+    }
+  }, [transcript]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (selectedMatchId) setSelectedId(selectedMatchId);
+  }, [selectedMatchId]);
 
   const handleMicPress = async () => {
     if (isListening) {
@@ -77,8 +94,14 @@ export const VoiceNavigationScreen = ({
       return;
     }
     try {
-      await start('en');
+      await start(preferredSTTLocale || 'en', { contextualStrings: searchHints });
     } catch (_) {}
+  };
+
+  const handleMatchPress = (match) => {
+    const matchKey = match?.id || match?.placeId || match?.title;
+    setSelectedId(matchKey);
+    if (typeof onSelectMatch === 'function') onSelectMatch(match);
   };
 
   const spokenSummaryText = effectiveRouteSummary
@@ -172,6 +195,61 @@ export const VoiceNavigationScreen = ({
         )}
       </Card>
 
+      {/* SPT: "Did you mean…" — only rendered when the spoken place was ambiguous */}
+      {Array.isArray(matches) && matches.length > 0 && (
+        <Card style={[styles.card, { borderColor: palette.cardBorder, borderWidth, backgroundColor: palette.surface }]}>
+          <Text {...textProps} style={[styles.cardTitle, getTextStyle('sm', { isHighContrast }), { color: palette.textPrimary }]}>
+            Did you mean?
+          </Text>
+          {matches.map((match) => {
+            const matchKey = match.id || match.placeId || match.title;
+            const isSelected = matchKey === selectedId;
+            return (
+              <Pressable
+                key={String(matchKey)}
+                accessible
+                accessibilityRole="button"
+                accessibilityLabel={`Navigate to ${match.title}${match.desc ? `, ${match.desc}` : ''}`}
+                accessibilityState={{ selected: isSelected }}
+                onPress={() => handleMatchPress(match)}
+                style={({ pressed }) => [
+                  styles.matchRow,
+                  {
+                    borderColor: isSelected ? palette.primary : palette.border,
+                    backgroundColor: isSelected ? (isHighContrast ? palette.surfaceAlt : '#ECFDF5') : palette.background,
+                    borderWidth: isSelected ? Math.max(2, borderWidth) : borderWidth,
+                    opacity: pressed ? 0.85 : 1,
+                  },
+                ]}
+              >
+                <View style={styles.matchTextCol}>
+                  <Text {...textProps} style={[getTextStyle('base', { isHighContrast }), { color: palette.textPrimary, fontWeight: '700' }]}>
+                    {match.title}
+                  </Text>
+                  {!!match.desc && (
+                    <Text {...textProps} style={[getTextStyle('xs', { isHighContrast }), { color: palette.textMuted, marginTop: 2 }]}>
+                      {match.desc}
+                    </Text>
+                  )}
+                </View>
+                <View style={styles.matchChipCol}>
+                  {!!match.distance && match.distance !== '--' && (
+                    <View style={[styles.matchChip, { backgroundColor: palette.surfaceAlt, borderColor: palette.border, borderWidth }]}>
+                      <Text {...textProps} style={[getTextStyle('xs', { isHighContrast }), { color: palette.textPrimary }]}>
+                        {match.distance}
+                      </Text>
+                    </View>
+                  )}
+                  {isSelected && (
+                    <Feather name="check-circle" size={18} color={palette.primary} style={{ marginLeft: 6 }} />
+                  )}
+                </View>
+              </Pressable>
+            );
+          })}
+        </Card>
+      )}
+
       <Card style={[styles.card, { borderColor: palette.cardBorder, borderWidth, backgroundColor: palette.surface }]}>
         <Text {...textProps} style={[styles.cardTitle, getTextStyle('sm', { isHighContrast }), { color: palette.textPrimary }]}>Route Summary</Text>
         <View style={styles.summaryGrid}>
@@ -195,7 +273,14 @@ export const VoiceNavigationScreen = ({
         title="Confirm & Navigate"
         onPress={() => {
           if (onConfirm) {
-            onConfirm({ transcript: displayTranscript, confidence, routeSummary: effectiveRouteSummary });
+            const selectedDestination =
+              (Array.isArray(matches) && matches.find((m) => (m.id || m.placeId || m.title) === selectedId)) || null;
+            onConfirm({
+              transcript: displayTranscript,
+              confidence,
+              routeSummary: effectiveRouteSummary,
+              destination: selectedDestination,
+            });
           }
         }}
         accessibilityLabel="Confirm route and start navigation"
@@ -245,6 +330,28 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 999,
     borderWidth: 1,
+  },
+  matchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 8,
+    minHeight: 48,
+  },
+  matchTextCol: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  matchChipCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  matchChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
   },
   summaryGrid: {
     flexDirection: 'row',

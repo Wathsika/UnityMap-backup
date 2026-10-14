@@ -22,6 +22,9 @@ export const useSpeechRecognition = () => {
   const [transcript, setTranscript] = useState('');
   const [interimTranscript, setInterimTranscript] = useState('');
   const [confidence, setConfidence] = useState(0);
+  // Alternative hypotheses from the STT engine — used by place matching to
+  // recover when the top transcript mishears a place name.
+  const [alternatives, setAlternatives] = useState([]);
   const [error, setError] = useState(null);
 
   const recognitionRef = useRef(null);
@@ -61,6 +64,7 @@ export const useSpeechRecognition = () => {
     setTranscript('');
     setInterimTranscript('');
     setConfidence(0);
+    setAlternatives([]);
     setError(null);
   }, []);
 
@@ -78,13 +82,20 @@ export const useSpeechRecognition = () => {
     setIsListening(false);
   }, []);
 
-  const start = useCallback(async (locale = 'en') => {
+  const start = useCallback(async (locale = 'en', options = {}) => {
     setError(null);
     setTranscript('');
     setInterimTranscript('');
     setConfidence(0);
+    setAlternatives([]);
 
     const bcp47 = mapLocale(locale);
+    // Place-name phrase hints (cities, landmarks, recents) — dramatically
+    // improves recognition of proper nouns. Capped: huge lists hurt latency.
+    const contextualStrings = (Array.isArray(options.contextualStrings) ? options.contextualStrings : [])
+      .map((s) => String(s || '').trim())
+      .filter(Boolean)
+      .slice(0, 80);
 
     if (Platform.OS === 'web') {
       const SR = typeof window !== 'undefined' ? window.SpeechRecognition || window.webkitSpeechRecognition : null;
@@ -108,6 +119,7 @@ export const useSpeechRecognition = () => {
             let interim = '';
             let finalTranscript = '';
             let finalConfidence = 0;
+            let finalAlts = [];
             for (let i = event.resultIndex; i < results.length; i++) {
               const res = results[i];
               const alt = res[0];
@@ -115,6 +127,14 @@ export const useSpeechRecognition = () => {
                 finalTranscript += alt.transcript;
                 if (typeof alt.confidence === 'number' && alt.confidence >= 0) {
                   finalConfidence = alt.confidence;
+                }
+                // Keep every hypothesis of the final result (engine order).
+                finalAlts = [];
+                for (let a = 0; a < res.length; a += 1) {
+                  finalAlts.push({
+                    transcript: res[a].transcript.trim(),
+                    confidence: typeof res[a].confidence === 'number' && res[a].confidence >= 0 ? res[a].confidence : 0,
+                  });
                 }
               } else {
                 interim += alt.transcript;
@@ -125,8 +145,9 @@ export const useSpeechRecognition = () => {
               const cleaned = finalTranscript.trim();
               setTranscript(cleaned);
               setInterimTranscript('');
-              if (finalConfidence > 0) setConfidence(finalConfidence);
-              else setConfidence(0.85);
+              // Real confidence only — 0 means "engine didn't report" (never faked).
+              setConfidence(finalConfidence);
+              setAlternatives(finalAlts.length ? finalAlts : [{ transcript: cleaned, confidence: finalConfidence }]);
             }
           } catch (e) {
             setError(e?.message || 'result-error');
@@ -185,7 +206,15 @@ export const useSpeechRecognition = () => {
               const isFinal = event.isFinal;
               if (isFinal) {
                 setTranscript(first.transcript.trim());
-                setConfidence(typeof first.confidence === 'number' ? first.confidence : 0.85);
+                // Real confidence only — 0 means "engine didn't report" (never faked).
+                setConfidence(typeof first.confidence === 'number' && first.confidence >= 0 ? first.confidence : 0);
+                const alts = results
+                  .map((r) => ({
+                    transcript: String(r?.transcript || '').trim(),
+                    confidence: typeof r?.confidence === 'number' && r.confidence >= 0 ? r.confidence : 0,
+                  }))
+                  .filter((r) => r.transcript);
+                setAlternatives(alts.length ? alts : [{ transcript: first.transcript.trim(), confidence: 0 }]);
                 setInterimTranscript('');
               } else {
                 setInterimTranscript(first.transcript);
@@ -212,7 +241,7 @@ export const useSpeechRecognition = () => {
         continuous: false,
         requiresOnDeviceRecognition: isOffline,
         addsPunctuation: false,
-        contextualStrings: [],
+        contextualStrings,
         volumeChangeEventOptions: { enabled: false },
       });
       setIsListening(true);
@@ -232,6 +261,7 @@ export const useSpeechRecognition = () => {
     transcript,
     interimTranscript,
     confidence,
+    alternatives,
     error,
     start,
     stop,
