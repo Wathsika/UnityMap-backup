@@ -981,7 +981,7 @@ const UnityMapScreen = () => {
               </View>
               <View style={tw`flex-row justify-between items-center py-2`}>
                 <Text {...textProps} style={{ color: palette.textPrimary }}>GPS Accuracy</Text>
-                <Text {...textProps} style={{ color: '#10B981', fontWeight: '700' }}>High (5.0m)</Text>
+                <Text {...textProps} style={{ color: isHighContrast ? palette.success : '#10B981', fontWeight: '700' }}>High (5.0m)</Text>
               </View>
             </View>
           </View>
@@ -1013,12 +1013,12 @@ const UnityMapScreen = () => {
                   tw`absolute top-3 left-4 right-4 z-30 flex-row items-center justify-center p-3 rounded-2xl shadow-md`,
                   {
                     backgroundColor: palette.surface,
-                    borderColor: '#10B981',
-                    borderWidth: 1.5,
+                    borderColor: isHighContrast ? palette.success : '#10B981',
+                    borderWidth: isHighContrast ? 2 : 1.5,
                   },
                 ]}
               >
-                <ActivityIndicator size="small" color="#10B981" style={tw`mr-2`} />
+                <ActivityIndicator size="small" color={isHighContrast ? palette.success : '#10B981'} style={tw`mr-2`} />
                 <Text
                   {...textProps}
                   style={[
@@ -1175,11 +1175,13 @@ const UnityMapScreen = () => {
               <View
                 style={[
                   tw`absolute top-3 left-4 right-4 z-30 flex-row items-center p-3 rounded-2xl shadow-md`,
-                  { backgroundColor: 'rgba(239,68,68,0.95)', borderColor: '#DC2626', borderWidth: 1 },
+                  isHighContrast
+                    ? { backgroundColor: palette.errorBg, borderColor: palette.error, borderWidth: 2 }
+                    : { backgroundColor: 'rgba(239,68,68,0.95)', borderColor: '#DC2626', borderWidth: 1 },
                 ]}
               >
-                <Feather name="alert-circle" size={16} color="#FFFFFF" style={tw`mr-2`} />
-                <Text style={tw`text-white text-xs font-medium flex-1`} numberOfLines={2}>
+                <Feather name="alert-circle" size={16} color={isHighContrast ? palette.error : '#FFFFFF'} style={tw`mr-2`} />
+                <Text style={[tw`text-xs font-medium flex-1`, isHighContrast ? { color: palette.error } : tw`text-white`]} numberOfLines={2}>
                   {tapRouteError}
                 </Text>
                 <TouchableOpacity
@@ -1189,7 +1191,7 @@ const UnityMapScreen = () => {
                   accessibilityRole="button"
                   accessibilityLabel="Dismiss error"
                 >
-                  <MaterialIcons name="close" size={18} color="#FFFFFF" />
+                  <MaterialIcons name="close" size={18} color={isHighContrast ? palette.error : '#FFFFFF'} />
                 </TouchableOpacity>
               </View>
             )}
@@ -1199,11 +1201,11 @@ const UnityMapScreen = () => {
               <View
                 style={[
                   tw`absolute top-2 left-4 right-4 z-40 flex-row items-center justify-center p-2 rounded-xl`,
-                  { backgroundColor: 'rgba(0,0,0,0.75)' },
+                  { backgroundColor: isHighContrast ? '#000000' : 'rgba(0,0,0,0.75)', borderWidth: isHighContrast ? 2 : 0, borderColor: '#FFFFFF' },
                 ]}
               >
-                <ActivityIndicator size="small" color="#10B981" style={tw`mr-2`} />
-                <Text style={tw`text-white text-xs font-semibold`}>
+                <ActivityIndicator size="small" color={isHighContrast ? '#FFFFFF' : '#10B981'} style={tw`mr-2`} />
+                <Text style={[tw`text-xs font-semibold`, isHighContrast ? { color: '#FFFFFF' } : tw`text-white`]}>
                   Syncing live MongoDB nodes & pathways...
                 </Text>
               </View>
@@ -1213,11 +1215,12 @@ const UnityMapScreen = () => {
               <View
                 style={[
                   tw`absolute top-2 left-4 right-4 z-40 flex-row items-center justify-between p-2.5 rounded-xl bg-amber-900/90 border border-amber-500`,
+                  isHighContrast && { backgroundColor: palette.warningBg, borderColor: palette.warning, borderWidth: 2 },
                 ]}
               >
                 <View style={tw`flex-row items-center flex-1 mr-2`}>
-                  <Feather name="alert-circle" size={16} color="#FCD34D" style={tw`mr-1.5`} />
-                  <Text style={tw`text-amber-100 text-xs font-medium`}>
+                  <Feather name="alert-circle" size={16} color={isHighContrast ? palette.warning : '#FCD34D'} style={tw`mr-1.5`} />
+                  <Text style={[tw`text-xs font-medium`, isHighContrast ? { color: palette.warning } : tw`text-amber-100`]}>
                     Offline: Using local cache ({dataError})
                   </Text>
                 </View>
@@ -1227,8 +1230,11 @@ const UnityMapScreen = () => {
                     checkHealth().then((h) => setIsBackendConnected(h?.status === 'ok'));
                   }}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessible
+                  accessibilityRole="button"
+                  accessibilityLabel="Retry loading data"
                 >
-                  <Text style={tw`text-white text-xs font-bold underline`}>Retry</Text>
+                  <Text style={[tw`text-xs font-bold underline`, isHighContrast ? { color: palette.primary } : tw`text-white`]}>Retry</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -1422,13 +1428,13 @@ const UnityMapScreen = () => {
                 {
                   backgroundColor: isWheelchairAccessible
                     ? isHighContrast
-                      ? '#000000'
+                      ? palette.primary
                       : '#0B3D2E'
                     : palette.surface,
                   borderWidth: isHighContrast ? 2 : 1.5,
                   borderColor: isWheelchairAccessible
                     ? isHighContrast
-                      ? '#FFFFFF'
+                      ? '#000000'
                       : '#10B981'
                     : palette.cardBorder,
                 },
@@ -1458,7 +1464,7 @@ const UnityMapScreen = () => {
                 <View
                   style={[
                     tw`absolute -top-1 -right-1 w-4.5 h-4.5 rounded-full items-center justify-center border-2 border-white`,
-                    { backgroundColor: '#10B981' },
+                    { backgroundColor: isHighContrast ? palette.success : '#10B981' },
                   ]}
                 >
                   <Feather name="check" size={10} color="#FFFFFF" />
@@ -1547,9 +1553,9 @@ const UnityMapScreen = () => {
                       Proximity Safety Analysis
                     </Text>
                     {isBackendConnected && (
-                      <View style={[tw`px-2 py-0.5 rounded-full bg-emerald-100 flex-row items-center`]}>
-                        <View style={tw`w-2 h-2 rounded-full bg-emerald-600 mr-1`} />
-                        <Text style={tw`text-[10px] font-bold text-emerald-700`}>Live Data</Text>
+                      <View style={[tw`px-2 py-0.5 rounded-full bg-emerald-100 flex-row items-center`, isHighContrast && { backgroundColor: palette.successBg, borderWidth: 2, borderColor: palette.success }]}>
+                        <View style={[tw`w-2 h-2 rounded-full bg-emerald-600 mr-1`, isHighContrast && { backgroundColor: palette.success }]} />
+                        <Text style={[tw`text-[10px] font-bold text-emerald-700`, isHighContrast && { color: palette.success }]}>Live Data</Text>
                       </View>
                     )}
                   </View>
@@ -1699,7 +1705,7 @@ const UnityMapScreen = () => {
                   <Feather
                     name="check-circle"
                     size={16}
-                    color={activeSheetCategory === 'accessible' ? (isHighContrast ? palette.textPrimary : '#16A34A') : palette.textMuted}
+                    color={activeSheetCategory === 'accessible' ? (isHighContrast ? palette.success : '#16A34A') : palette.textMuted}
                     style={tw`mr-1.5`}
                   />
                   <Text
@@ -1709,7 +1715,7 @@ const UnityMapScreen = () => {
                       {
                         fontWeight: '700',
                         color: activeSheetCategory === 'accessible'
-                          ? (isHighContrast ? palette.textPrimary : '#16A34A')
+                          ? (isHighContrast ? palette.success : '#16A34A')
                           : palette.textMuted,
                       },
                     ]}
@@ -1724,7 +1730,7 @@ const UnityMapScreen = () => {
                 {activeSheetCategory === 'hazards' ? (
                   nearbyHazards.length === 0 ? (
                     <View style={tw`py-6 items-center justify-center`}>
-                      <Feather name="check-circle" size={24} color="#16A34A" />
+                      <Feather name="check-circle" size={24} color={isHighContrast ? palette.success : '#16A34A'} />
                       <Text
                         {...textProps}
                         style={[
@@ -1770,22 +1776,22 @@ const UnityMapScreen = () => {
                           style={[
                             tw`w-11 h-11 rounded-xl items-center justify-center mr-3`,
                             {
-                              backgroundColor: isHighContrast ? palette.surfaceAlt : '#FEE2E2',
+                              backgroundColor: isHighContrast ? palette.errorBg : '#FEE2E2',
                               borderWidth: isHighContrast ? borderWidth : 0,
-                              borderColor: palette.cardBorder,
+                              borderColor: isHighContrast ? palette.error : palette.cardBorder,
                             },
                           ]}
                         >
                           {item.iconType === 'construction' ? (
-                            <MaterialCommunityIcons name="wall" size={20} color="#DC2626" />
+                            <MaterialCommunityIcons name="wall" size={20} color={isHighContrast ? palette.error : '#DC2626'} />
                           ) : item.iconType === 'stairs' ? (
-                            <MaterialIcons name="stairs" size={20} color="#DC2626" />
+                            <MaterialIcons name="stairs" size={20} color={isHighContrast ? palette.error : '#DC2626'} />
                           ) : item.iconType === 'broken_elevator' ? (
-                            <MaterialCommunityIcons name="elevator-passenger-outline" size={20} color="#DC2626" />
+                            <MaterialCommunityIcons name="elevator-passenger-outline" size={20} color={isHighContrast ? palette.error : '#DC2626'} />
                           ) : item.iconType === 'slope' ? (
-                            <MaterialCommunityIcons name="slope-uphill" size={20} color="#D97706" />
+                            <MaterialCommunityIcons name="slope-uphill" size={20} color={isHighContrast ? palette.warning : '#D97706'} />
                           ) : (
-                            <Feather name="alert-triangle" size={18} color="#DC2626" />
+                            <Feather name="alert-triangle" size={18} color={isHighContrast ? palette.error : '#DC2626'} />
                           )}
                         </View>
 
@@ -1818,12 +1824,18 @@ const UnityMapScreen = () => {
                             tw`px-2.5 py-1 rounded-lg`,
                             {
                               backgroundColor: isHighContrast
-                                ? palette.surfaceAlt
+                                ? item.priority === 'High'
+                                  ? palette.errorBg
+                                  : palette.warningBg
                                 : item.priority === 'High'
                                 ? '#FEE2E2'
                                 : '#FEF3C7',
                               borderWidth: isHighContrast ? borderWidth : 0,
-                              borderColor: palette.border,
+                              borderColor: isHighContrast
+                                ? item.priority === 'High'
+                                  ? palette.error
+                                  : palette.warning
+                                : palette.border,
                             },
                           ]}
                         >
@@ -1833,7 +1845,9 @@ const UnityMapScreen = () => {
                               getTextStyle('xs', { isHighContrast }),
                               {
                                 color: isHighContrast
-                                  ? palette.textPrimary
+                                  ? item.priority === 'High'
+                                    ? palette.error
+                                    : palette.warning
                                   : item.priority === 'High'
                                   ? '#DC2626'
                                   : '#B45309',
@@ -1896,20 +1910,20 @@ const UnityMapScreen = () => {
                           style={[
                             tw`w-11 h-11 rounded-xl items-center justify-center mr-3`,
                             {
-                              backgroundColor: isHighContrast ? palette.surfaceAlt : '#DCFCE7',
+                              backgroundColor: isHighContrast ? palette.successBg : '#DCFCE7',
                               borderWidth: isHighContrast ? borderWidth : 0,
-                              borderColor: palette.cardBorder,
+                              borderColor: isHighContrast ? palette.success : palette.cardBorder,
                             },
                           ]}
                         >
                           {item.iconType === 'elevator' ? (
-                            <MaterialCommunityIcons name="elevator-passenger" size={20} color="#16A34A" />
+                            <MaterialCommunityIcons name="elevator-passenger" size={20} color={isHighContrast ? palette.success : '#16A34A'} />
                           ) : item.iconType === 'rest_area' ? (
-                            <MaterialIcons name="chair" size={20} color="#16A34A" />
+                            <MaterialIcons name="chair" size={20} color={isHighContrast ? palette.success : '#16A34A'} />
                           ) : item.iconType === 'walkway' ? (
-                            <MaterialCommunityIcons name="road-variant" size={20} color="#16A34A" />
+                            <MaterialCommunityIcons name="road-variant" size={20} color={isHighContrast ? palette.success : '#16A34A'} />
                           ) : (
-                            <FontAwesome5 name="wheelchair" size={16} color="#16A34A" />
+                            <FontAwesome5 name="wheelchair" size={16} color={isHighContrast ? palette.success : '#16A34A'} />
                           )}
                         </View>
 
@@ -2155,7 +2169,7 @@ const UnityMapScreen = () => {
         <AudioFirstLauncherScreen onNavigate={handleLauncherNavigate} />
         <TouchableOpacity
           onPress={() => setShowLauncher(false)}
-          style={tw`absolute top-12 right-4 px-3 py-2 rounded-full bg-black/60`}
+          style={[tw`absolute top-12 right-4 px-3 py-2 rounded-full bg-black/60`, isHighContrast && { borderWidth: 2, borderColor: '#FFFFFF', backgroundColor: '#000000' }]}
           accessibilityRole="button"
           accessibilityLabel="Dismiss launcher, show map"
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
