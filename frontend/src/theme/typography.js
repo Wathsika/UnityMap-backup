@@ -19,7 +19,7 @@ export const getTextStyle = (variant = 'base', { isHighContrast = false } = {}) 
     lineHeight: base.lineHeight,
     fontWeight: base.fontWeight,
     // High-contrast enforces bolder weight for readability
-    ...(isHighContrast && variant === 'base' ? { fontWeight: '700' } : null),
+    ...(isHighContrast ? { fontWeight: '700' } : null),
   };
 };
 
