@@ -578,8 +578,8 @@ export const LiveTurnByTurnNavigationScreen = ({
             },
           ]}
         >
-          <View style={[styles.maneuverIconContainer, { backgroundColor: isHighContrast ? '#FFFFFF' : '#1E6F50' }]}>
-            {getManeuverIcon(currentStep?.maneuver, isHighContrast ? '#000000' : '#FFFFFF')}
+          <View style={[styles.maneuverIconContainer, { backgroundColor: isHighContrast ? palette.primary : '#1E6F50', borderWidth: isHighContrast ? 2 : 0, borderColor: '#000000' }]}>
+            {getManeuverIcon(currentStep?.maneuver, isHighContrast)}
           </View>
           <View style={styles.maneuverTextContainer}>
             <View style={styles.maneuverDistanceRow}>
