@@ -10,6 +10,7 @@ const TriageUrgencyScore = require('./TriageUrgencyScore');
 const SpeechPrompt = require('./SpeechPrompt');
 const HazardCue = require('./HazardCue');
 const RouteSpeechSnippet = require('./RouteSpeechSnippet');
+const Place = require('./Place');
 
 module.exports = {
   Node,
@@ -24,4 +25,5 @@ module.exports = {
   SpeechPrompt,
   HazardCue,
   RouteSpeechSnippet,
+  Place,
 };

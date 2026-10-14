@@ -273,7 +273,9 @@ export const apiRequest = async (endpoint, options = {}) => {
   // aborting a healthy multipart POST at 20s both fails the submit AND mislabels it
   // as "offline". Background GETs default to 20000ms (≥15000ms requirement).
   // Never forward timeoutMs to fetch itself.
-  const { timeoutMs, ...fetchOptions } = options;
+  // noFallback (opt-in): typeahead-style calls fail fast on the primary host
+  // instead of walking fallback ports/hosts (~45s of spinner). Never forwarded.
+  const { timeoutMs, noFallback, ...fetchOptions } = options;
   const timeout = typeof timeoutMs === 'number' && timeoutMs > 0 ? timeoutMs : 20000;
   const method = (fetchOptions.method || 'GET').toUpperCase();
   const dedupKey = method === 'GET' && typeof fetchOptions.body === 'undefined'
@@ -430,6 +432,9 @@ export const apiRequest = async (endpoint, options = {}) => {
   try {
     return await tryFetch(primaryBase);
   } catch (primaryErr) {
+    // Fast-fail callers (typeahead search) never walk the fallback chain —
+    // they render local results instead of spinning through dead hosts.
+    if (noFallback) throw primaryErr;
     // An auth verdict is port-independent — never replay credentials elsewhere.
     if (primaryErr instanceof ApiError && (primaryErr.status === 401 || primaryErr.status === 403)) {
       throw primaryErr;

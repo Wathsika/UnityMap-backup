@@ -55,6 +55,7 @@ import {
   computeRouteSafetyStatus,
   categorizeProximityFeatures,
 } from '../../utils/mapMath';
+import { searchExternalPlaces, searchLocalPlaces, getLocalPlaceById, wheelchairChip } from '../../services/placeSearchService';
 
 /**
  * UnityMapScreen.js — Accessible Map & Real-time Live MongoDB Explorer
@@ -65,6 +66,17 @@ import {
  * - Clean top navbar with static banner removed
  * - Global High-Contrast WCAG 2.1 compliance
  */
+
+/**
+ * Category icon for universal place results (Google-Maps-style rows & card).
+ * `icon` = { library: 'feather'|'material'|'fa5', name } from placeSearchService.
+ */
+const PlaceCategoryIcon = ({ icon, size = 16, color = '#1E6F50' }) => {
+  const name = icon?.name || 'map-pin';
+  if (icon?.library === 'material') return <MaterialIcons name={name} size={size} color={color} />;
+  if (icon?.library === 'fa5') return <FontAwesome5 name={name} size={size - 2} color={color} />;
+  return <Feather name={name} size={size} color={color} />;
+};
 const UnityMapScreen = () => {
   const [activeTab, setActiveTab] = useState('Map');
   const [searchQuery, setSearchQuery] = useState('');
@@ -102,6 +114,18 @@ const UnityMapScreen = () => {
   const [currentLocation, setCurrentLocation] = useState(null);
   const [isTurnByTurnActive, setIsTurnByTurnActive] = useState(false);
   const [activeNavRoute, setActiveNavRoute] = useState(null);
+  // Universal place search (Nominatim via backend proxy, road distances only)
+  const [externalResults, setExternalResults] = useState([]);
+  const [isExternalSearching, setIsExternalSearching] = useState(false);
+  const [externalError, setExternalError] = useState(null);
+  // Local DB places table (~5k rows): search bar hits this FIRST, click → lat/lon from DB → map
+  const [localResults, setLocalResults] = useState([]);
+  const [isLocalSearching, setIsLocalSearching] = useState(false);
+  const localRequestIdRef = React.useRef(0);
+  // Google-Maps-style place detail card (set when an external result is tapped)
+  const [selectedPlace, setSelectedPlace] = useState(null);
+  const externalCacheRef = React.useRef(new Map());
+  const externalRequestIdRef = React.useRef(0);
 
   const { palette, borderWidth, isHighContrast, isReduceMotionEnabled, isAudioLauncherEnabled } = useTheme();
   const { speak } = useSpeech();
@@ -184,6 +208,18 @@ const UnityMapScreen = () => {
           pathways: pathwaysRes?.data?.length || 0,
           elevators: elevatorsRes?.data?.length || 0,
         });
+
+        // All 4 fetches failed (backend unreachable) → show the offline banner
+        // instead of a silent empty map. Individual .catch() above swallow the
+        // errors, so detect it here via the missing `success` flags.
+        if (
+          !nodesRes?.success &&
+          !obstaclesRes?.success &&
+          !pathwaysRes?.success &&
+          !elevatorsRes?.success
+        ) {
+          setDataError('Backend unreachable — phone & PC must share WiFi; check EXPO_PUBLIC_API_URL');
+        }
 
         // 1. Process Nodes — save to offline cache for voice search fallback
         if (nodesRes?.success && Array.isArray(nodesRes.data) && nodesRes.data.length > 0) {
@@ -509,7 +545,15 @@ const UnityMapScreen = () => {
     }
   }, [currentLocation, location, mapCenter, dbNodes, dbPathways, dbObstacles, dbElevators, isWheelchairAccessible]);
 
+  // Google-Maps-style place card actions: Directions → route preview sheet
+  // (Start Navigation lives there); Close → dismiss card + route.
+  const handlePlaceDirections = useCallback(() => {
+    setSelectedPlace(null);
+    setIsTapSummarySheetVisible(true);
+  }, []);
+
   const handleClearTap = useCallback(() => {
+    setSelectedPlace(null);
     setTappedLocation(null);
     setTapRoute(null);
     setTapRouteMeta(null);
@@ -554,28 +598,53 @@ const UnityMapScreen = () => {
       etaText: eta,
       coordinates: coords,
       color: '#10B981',
-      maxSlope: '4.8° (Safe)',
+      // External/OSM roads carry no surveyed slope data — never claim ADA-safe.
+      maxSlope: 'Slope n/a (street estimate)',
+      slopeUnknown: true,
     };
 
     setActiveNavRoute(navRoute);
     setIsTurnByTurnActive(true);
   }, [tapRouteMeta, tapRoute, tappedLocation, location]);
 
-  // Select destination from real DB list / search history — also starts live navigation on current BaseMap
+  // Select destination from real DB list / search history / universal places.
+  // External (OSM) + LOCAL DB places open a Google-Maps-style detail card; the
+  // route is drawn underneath (lat/lng always come from the DB row on click)
+  // and the safety sheet appears after tapping Directions.
   const handleSelectDestination = useCallback(
     async (dest) => {
-      setSearchQuery(dest.title);
-      if (dest.lat && dest.lng) {
-        setMapCenter([dest.lat, dest.lng]);
+      // Local DB row: re-fetch fresh lat/lon from DB by id (source of truth for map pin).
+      let target = dest;
+      if (dest?.source === 'local' && dest?.placeId) {
+        try {
+          const fresh = await getLocalPlaceById(dest.placeId);
+          if (fresh && Number.isFinite(Number(fresh.lat)) && Number.isFinite(Number(fresh.lng))) {
+            target = { ...dest, ...fresh };
+          }
+        } catch (_) {}
+      }
+      setSearchQuery(target.title);
+      if (target.lat && target.lng) {
+        const bb = target.boundingbox;
+        const center =
+          bb && [bb.south, bb.north, bb.west, bb.east].every((n) => Number.isFinite(Number(n)))
+            ? [(Number(bb.south) + Number(bb.north)) / 2, (Number(bb.west) + Number(bb.east)) / 2]
+            : [target.lat, target.lng];
+        setMapCenter(center);
         // Reuse current map pipeline to draw route and show summary
         try {
-          await handleMapTap({ latitude: dest.lat, longitude: dest.lng });
+          await handleMapTap({ latitude: target.lat, longitude: target.lng });
         } catch (_) {}
+        if (target.source === 'external' || target.source === 'local') {
+          // Route preview (safety sheet) waits for Directions — detail card first.
+          setIsTapSummarySheetVisible(false);
+          setSelectedPlace(target);
+        }
       }
       // Move selected to top of recent list and save
       setRecentDestinations((prev) => {
-        const filtered = prev.filter((d) => d.id !== dest.id);
-        const updated = [dest, ...filtered];
+        const filtered = prev.filter((d) => d.id !== target.id);
+        const updated = [target, ...filtered];
         saveRecentSearches(updated);
         return updated;
       });
@@ -583,10 +652,15 @@ const UnityMapScreen = () => {
     [handleMapTap]
   );
 
-  // Typed search fallback: Enter with no exact match → top-score fuzzy handleMapTap
+  // Typed search fallback: Enter → local DB top hit first, then fuzzy DB nodes.
   const handleSearchSubmit = useCallback(async () => {
     const q = searchQuery.trim();
     if (!q) return;
+    // Local ~5k table top hit wins (lat/lon from DB → map).
+    if (localResults.length > 0) {
+      await handleSelectDestination(localResults[0]);
+      return;
+    }
     const all = [...dbNodes, ...recentDestinations];
     let best = null;
     let bestScore = -1;
@@ -605,7 +679,7 @@ const UnityMapScreen = () => {
     if (best && bestScore >= 1) {
       await handleSelectDestination(best);
     }
-  }, [searchQuery, dbNodes, recentDestinations, handleSelectDestination]);
+  }, [searchQuery, dbNodes, recentDestinations, localResults, handleSelectDestination]);
 
   // SPT-106: bridge spoken transcript to Voice Input & Summary Readout Screen — summary first via getRoute includeSpeech, draw on Confirm
   const handleLauncherNavigate = useCallback(
@@ -749,7 +823,8 @@ const UnityMapScreen = () => {
             etaText: routeSummary?.etaText || '15 mins',
             coordinates: coords,
             color: '#10B981',
-            maxSlope: '4.8° (Safe)',
+            maxSlope: 'Slope n/a (street estimate)',
+            slopeUnknown: true,
           });
           setIsTurnByTurnActive(true);
         }
@@ -783,7 +858,8 @@ const UnityMapScreen = () => {
             etaText: routeSummary?.etaText || '15 mins',
             coordinates: coords,
             color: '#10B981',
-            maxSlope: '4.8° (Safe)',
+            maxSlope: 'Slope n/a (street estimate)',
+            slopeUnknown: true,
           });
           setIsTurnByTurnActive(true);
         }
@@ -795,6 +871,85 @@ const UnityMapScreen = () => {
   const handleVoiceCancel = useCallback(() => {
     setShowVoiceSummary(false);
   }, []);
+
+  // Origin for external road-distance search: live GPS first, map fallback last.
+  const searchOrigin = useMemo(() => {
+    if (currentLocation?.latitude && currentLocation?.longitude) return currentLocation;
+    if (location?.latitude && location?.longitude) return location;
+    if (dbNodes[0]?.lat && dbNodes[0]?.lng) {
+      return { latitude: dbNodes[0].lat, longitude: dbNodes[0].lng };
+    }
+    return { latitude: mapCenter[0], longitude: mapCenter[1] };
+  }, [currentLocation, location, dbNodes, mapCenter]);
+
+  // LOCAL DB places table (~5k rows): fast debounced search, hits on 2+ chars.
+  // Click result → lat/lon from DB → map pin + route (see handleSelectDestination).
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      localRequestIdRef.current += 1;
+      setLocalResults([]);
+      setIsLocalSearching(false);
+      return undefined;
+    }
+    const requestId = (localRequestIdRef.current += 1);
+    setIsLocalSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const results = await searchLocalPlaces(q, searchOrigin, { limit: 10 });
+        if (localRequestIdRef.current !== requestId) return; // stale keystrokes
+        setLocalResults(results);
+      } catch (_) {
+        if (localRequestIdRef.current !== requestId) return;
+        setLocalResults([]);
+      } finally {
+        if (localRequestIdRef.current === requestId) setIsLocalSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, searchOrigin]);
+
+  // Universal search: debounced backend proxy (Nominatim + OSRM road distance).
+  // Local DB results render instantly; external rows stream in with road chips.
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 3) {
+      externalRequestIdRef.current += 1;
+      setExternalResults([]);
+      setIsExternalSearching(false);
+      setExternalError(null);
+      return undefined;
+    }
+    const cacheKey = `${q.toLowerCase()}|${Number(searchOrigin.latitude).toFixed(3)},${Number(searchOrigin.longitude).toFixed(3)}`;
+    if (externalCacheRef.current.has(cacheKey)) {
+      setExternalResults(externalCacheRef.current.get(cacheKey));
+      setIsExternalSearching(false);
+      setExternalError(null);
+      return undefined;
+    }
+    const requestId = (externalRequestIdRef.current += 1);
+    setIsExternalSearching(true);
+    setExternalError(null);
+    const timer = setTimeout(async () => {
+      try {
+        const results = await searchExternalPlaces(q, searchOrigin, { limit: 8 });
+        if (externalRequestIdRef.current !== requestId) return; // stale keystrokes
+        externalCacheRef.current.set(cacheKey, results);
+        if (externalCacheRef.current.size > 30) {
+          const oldest = externalCacheRef.current.keys().next().value;
+          externalCacheRef.current.delete(oldest);
+        }
+        setExternalResults(results);
+      } catch (err) {
+        if (externalRequestIdRef.current !== requestId) return;
+        setExternalError('Place search unavailable — showing saved places.');
+        setExternalResults([]);
+      } finally {
+        if (externalRequestIdRef.current === requestId) setIsExternalSearching(false);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery, searchOrigin]);
 
   // Combined and filtered destinations (DB nodes + real recent searches)
   const filteredDestinations = useMemo(() => {
@@ -1032,8 +1187,238 @@ const UnityMapScreen = () => {
               </View>
             )}
 
+            {/* Google-Maps-style Place Detail Card (universal search selection) */}
+            {selectedPlace && tapRouteMeta && !tapRouteLoading && (
+              <View
+                style={[
+                  tw`absolute ${isSearchExpanded ? 'top-18' : 'top-3'} left-4 right-4 z-30 rounded-2xl p-4 shadow-xl`,
+                  {
+                    backgroundColor: palette.surface,
+                    borderColor: palette.cardBorder,
+                    borderWidth: isHighContrast ? 2 : 1,
+                  },
+                  isHighContrast && { shadowOpacity: 0, elevation: 0, borderColor: '#000000' },
+                ]}
+              >
+                {/* Category banner row */}
+                <View style={tw`flex-row items-center justify-between mb-2`}>
+                  <View style={tw`flex-row items-center flex-1 mr-2`}>
+                    <View
+                      style={[
+                        tw`w-10 h-10 rounded-xl items-center justify-center mr-2.5`,
+                        {
+                          backgroundColor: isHighContrast ? palette.surfaceAlt : '#EBF7F0',
+                          borderWidth: isHighContrast ? borderWidth : 0,
+                          borderColor: palette.border,
+                        },
+                      ]}
+                    >
+                      <PlaceCategoryIcon icon={selectedPlace.icon} size={18} color={palette.primary} />
+                    </View>
+                    <View style={tw`flex-1`}>
+                      <Text
+                        {...textProps}
+                        style={[
+                          tw`font-bold`,
+                          getTextStyle('sm', { isHighContrast }),
+                          { color: palette.textPrimary },
+                        ]}
+                        numberOfLines={2}
+                      >
+                        {selectedPlace.title}
+                      </Text>
+                      <Text
+                        {...textProps}
+                        style={[
+                          getTextStyle('xs', { isHighContrast }),
+                          { color: palette.primary, fontWeight: '700' },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {selectedPlace.categoryLabel || 'Place'}
+                      </Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    onPress={handleClearTap}
+                    style={[tw`w-10 h-10 rounded-full items-center justify-center`]}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    accessible
+                    accessibilityRole="button"
+                    accessibilityLabel="Close place details"
+                  >
+                    <MaterialIcons name="close" size={20} color={palette.textMuted} />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Address */}
+                <Text
+                  {...textProps}
+                  style={[
+                    tw`mb-2`,
+                    getTextStyle('xs', { isHighContrast }),
+                    { color: palette.textMuted },
+                  ]}
+                  numberOfLines={2}
+                >
+                  {selectedPlace.fullAddress || selectedPlace.addressShort}
+                </Text>
+
+                {/* Distance · ETA · wheelchair chips */}
+                <View style={tw`flex-row items-center flex-wrap gap-2 mb-2`}>
+                  <View
+                    style={[
+                      tw`px-2.5 py-1 rounded-lg`,
+                      {
+                        backgroundColor: isHighContrast ? palette.surfaceAlt : '#F1F5F9',
+                        borderWidth: isHighContrast ? borderWidth : 0,
+                        borderColor: palette.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      {...textProps}
+                      style={[
+                        tw`font-bold`,
+                        getTextStyle('xs', { isHighContrast }),
+                        { color: palette.textPrimary },
+                      ]}
+                    >
+                      {tapRouteMeta.distanceText}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      tw`flex-row items-center px-2.5 py-1 rounded-lg`,
+                      {
+                        backgroundColor: isHighContrast ? palette.surfaceAlt : '#F1F5F9',
+                        borderWidth: isHighContrast ? borderWidth : 0,
+                        borderColor: palette.border,
+                      },
+                    ]}
+                  >
+                    <FontAwesome5 name="wheelchair" size={10} color={palette.primary} style={tw`mr-1.5`} />
+                    <Text
+                      {...textProps}
+                      style={[
+                        tw`font-bold`,
+                        getTextStyle('xs', { isHighContrast }),
+                        { color: palette.textPrimary },
+                      ]}
+                    >
+                      {tapRouteMeta.etaText}
+                    </Text>
+                  </View>
+                  {(() => {
+                    const chip = wheelchairChip(selectedPlace.wheelchair);
+                    if (!chip) return null;
+                    return (
+                      <View
+                        style={[
+                          tw`flex-row items-center px-2.5 py-1 rounded-full`,
+                          {
+                            backgroundColor: isHighContrast ? palette.surface : chip.bg,
+                            borderColor: isHighContrast ? '#000000' : chip.border,
+                            borderWidth: isHighContrast ? 2 : 1,
+                          },
+                        ]}
+                        accessible
+                        accessibilityLabel={chip.text}
+                      >
+                        <FontAwesome5
+                          name="wheelchair"
+                          size={10}
+                          color={isHighContrast ? palette.textPrimary : chip.color}
+                          style={tw`mr-1`}
+                        />
+                        <Text
+                          {...textProps}
+                          style={[
+                            tw`font-bold`,
+                            getTextStyle('xs', { isHighContrast }),
+                            { color: isHighContrast ? palette.textPrimary : chip.color },
+                          ]}
+                        >
+                          {chip.text}
+                        </Text>
+                      </View>
+                    );
+                  })()}
+                </View>
+
+                {/* Opening hours / phone (OSM extratags, when mapped) */}
+                {(selectedPlace.openingHours || selectedPlace.phone) && (
+                  <View style={tw`mb-3 gap-1`}>
+                    {selectedPlace.openingHours ? (
+                      <View style={tw`flex-row items-center`}>
+                        <Feather name="clock" size={12} color={palette.textMuted} style={tw`mr-1.5`} />
+                        <Text
+                          {...textProps}
+                          style={[
+                            getTextStyle('xs', { isHighContrast }),
+                            { color: palette.textMuted },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {selectedPlace.openingHours}
+                        </Text>
+                      </View>
+                    ) : null}
+                    {selectedPlace.phone ? (
+                      <View style={tw`flex-row items-center`}>
+                        <Feather name="phone" size={12} color={palette.textMuted} style={tw`mr-1.5`} />
+                        <Text
+                          {...textProps}
+                          style={[
+                            getTextStyle('xs', { isHighContrast }),
+                            { color: palette.textMuted },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {selectedPlace.phone}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                )}
+
+                {/* Directions action (≥48dp) */}
+                <TouchableOpacity
+                  onPress={handlePlaceDirections}
+                  activeOpacity={0.85}
+                  accessible
+                  accessibilityRole="button"
+                  accessibilityLabel={`Get directions to ${selectedPlace.title}`}
+                  accessibilityHint="Shows the route preview with safety analysis, then live navigation"
+                  style={[
+                    tw`flex-row items-center justify-center rounded-2xl py-3.5`,
+                    isHighContrast
+                      ? { backgroundColor: '#FFFFFF', borderColor: '#000000', borderWidth: 2, minHeight: 52 }
+                      : { backgroundColor: palette.primary, minHeight: 52, elevation: 4 },
+                  ]}
+                >
+                  <MaterialIcons
+                    name="directions"
+                    size={20}
+                    color={isHighContrast ? '#000000' : '#FFFFFF'}
+                    style={tw`mr-2`}
+                  />
+                  <Text
+                    {...textProps}
+                    style={[
+                      tw`font-bold`,
+                      getTextStyle('sm', { isHighContrast }),
+                      { color: isHighContrast ? '#000000' : '#FFFFFF' },
+                    ]}
+                  >
+                    Directions
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             {/* Tap Route: Distance, ETA & Safety Status Header Card */}
-            {tapRouteMeta && !tapRouteLoading && (
+            {tapRouteMeta && !tapRouteLoading && !selectedPlace && (
               <View
                 style={[
                   tw`absolute ${isSearchExpanded ? 'top-18' : 'top-3'} left-4 right-4 z-30 rounded-2xl p-3.5 shadow-xl`,
@@ -1298,21 +1683,21 @@ const UnityMapScreen = () => {
                     keyboardShouldPersistTaps="handled"
                   >
                     {filteredDestinations.length === 0 ? (
-                      <View style={tw`py-4 items-center justify-center`}>
-                        <Feather name="search" size={20} color={palette.textMuted} />
-                        <Text
-                          {...textProps}
-                          style={[
-                            tw`mt-1 text-center`,
-                            getTextStyle('xs', { isHighContrast }),
-                            { color: palette.textMuted },
-                          ]}
-                        >
-                          {searchQuery
-                            ? `No destinations match "${searchQuery}"`
-                            : 'Search above or select accessible locations'}
-                        </Text>
-                      </View>
+                      searchQuery.trim() ? null : (
+                        <View style={tw`py-4 items-center justify-center`}>
+                          <Feather name="search" size={20} color={palette.textMuted} />
+                          <Text
+                            {...textProps}
+                            style={[
+                              tw`mt-1 text-center`,
+                              getTextStyle('xs', { isHighContrast }),
+                              { color: palette.textMuted },
+                            ]}
+                          >
+                            Search above or select accessible locations
+                          </Text>
+                        </View>
+                      )
                     ) : (
                       filteredDestinations.map((item) => (
                         <TouchableOpacity
@@ -1409,6 +1794,286 @@ const UnityMapScreen = () => {
                           </View>
                         </TouchableOpacity>
                       ))
+                    )}
+
+                    {/* ── Local DB results: ~5k places table — tap → lat/lon from DB → map ── */}
+                    {searchQuery.trim().length >= 2 && (
+                      <View style={tw`mt-2`}>
+                        {isLocalSearching && localResults.length === 0 && (
+                          <View style={tw`items-center py-1.5`}>
+                            <ActivityIndicator size="small" color={palette.primary} />
+                          </View>
+                        )}
+
+                        {localResults.map((item) => {
+                          const wcChip = wheelchairChip(item.wheelchair);
+                          const wcLabel = wcChip ? `, ${wcChip.text}` : '';
+                          return (
+                            <TouchableOpacity
+                              key={item.id}
+                              style={[
+                                tw`flex-row items-center py-2.5 px-2 rounded-xl mb-1`,
+                                { minHeight: 56 },
+                              ]}
+                              onPress={() => handleSelectDestination(item)}
+                              activeOpacity={0.7}
+                              accessible
+                              accessibilityRole="button"
+                              accessibilityLabel={`${item.title}, ${item.categoryLabel || 'Place'}, ${item.addressShort}${wcLabel}. Tap to show on map.`}
+                              accessibilityHint="Shows this saved place on the map with directions"
+                              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                            >
+                              <View
+                                style={[
+                                  tw`w-10 h-10 rounded-xl items-center justify-center mr-3`,
+                                  {
+                                    backgroundColor: isHighContrast
+                                      ? palette.surfaceAlt
+                                      : palette.secondaryBg,
+                                    borderWidth: isHighContrast ? borderWidth : 0,
+                                    borderColor: palette.border,
+                                  },
+                                ]}
+                              >
+                                <PlaceCategoryIcon icon={item.icon} size={17} color={palette.primary} />
+                              </View>
+
+                              <View style={tw`flex-1 mr-2`}>
+                                <Text
+                                  {...textProps}
+                                  style={[
+                                    tw`font-semibold`,
+                                    getTextStyle('sm', { isHighContrast }),
+                                    { color: palette.textPrimary },
+                                  ]}
+                                  numberOfLines={1}
+                                >
+                                  {item.title}
+                                </Text>
+                                <Text
+                                  {...textProps}
+                                  style={[
+                                    getTextStyle('xs', { isHighContrast }),
+                                    { color: palette.textMuted },
+                                  ]}
+                                  numberOfLines={1}
+                                >
+                                  {item.addressShort}
+                                </Text>
+                                <View style={tw`flex-row items-center mt-0.5`}>
+                                  <Text
+                                    {...textProps}
+                                    style={[
+                                      tw`font-bold`,
+                                      getTextStyle('xs', { isHighContrast }),
+                                      { color: isHighContrast ? palette.textPrimary : palette.primary },
+                                    ]}
+                                  >
+                                    {item.categoryLabel || 'Saved'}
+                                  </Text>
+                                  {wcChip && (
+                                    <View
+                                      style={[
+                                        tw`ml-1.5 px-1.5 py-0.5 rounded-full`,
+                                        {
+                                          backgroundColor: isHighContrast ? palette.surface : wcChip.bg,
+                                          borderColor: isHighContrast ? palette.textPrimary : wcChip.border,
+                                          borderWidth: 1,
+                                        },
+                                      ]}
+                                    >
+                                      <Text
+                                        {...textProps}
+                                        style={[
+                                          tw`font-bold`,
+                                          {
+                                            fontSize: 10,
+                                            color: isHighContrast ? palette.textPrimary : wcChip.color,
+                                          },
+                                        ]}
+                                      >
+                                        {wcChip.text}
+                                      </Text>
+                                    </View>
+                                  )}
+                                </View>
+                              </View>
+
+                              <Feather name="chevron-right" size={18} color={palette.textMuted} />
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    )}
+
+                    {/* ── Universal results: any place via OSM (road distance chips) ── */}
+                    {searchQuery.trim().length >= 3 && (
+                      <View style={tw`mt-2`}>
+                        <View style={tw`flex-row items-center justify-between mb-1 px-1`}>
+                          <Text
+                            {...textProps}
+                            style={[
+                              tw`font-bold tracking-wider uppercase`,
+                              getTextStyle('xs', { isHighContrast }),
+                              { color: palette.textMuted },
+                            ]}
+                          >
+                            {isExternalSearching
+                              ? 'Searching nearby places…'
+                              : `Nearby places (${externalResults.length})`}
+                          </Text>
+                          {isExternalSearching && (
+                            <ActivityIndicator size="small" color={palette.primary} />
+                          )}
+                        </View>
+
+                        {externalError && !isExternalSearching && (
+                          <Text
+                            {...textProps}
+                            style={[
+                              tw`px-1 mb-1`,
+                              getTextStyle('xs', { isHighContrast }),
+                              { color: palette.textMuted },
+                            ]}
+                          >
+                            {externalError}
+                          </Text>
+                        )}
+
+                        {!isExternalSearching &&
+                          !externalError &&
+                          externalResults.length === 0 && (
+                            <Text
+                              {...textProps}
+                              style={[
+                                tw`px-1 mb-1`,
+                                getTextStyle('xs', { isHighContrast }),
+                                { color: palette.textMuted },
+                              ]}
+                            >
+                              No street-map matches — try a landmark (e.g. Fort, Galle Face).
+                            </Text>
+                          )}
+
+                        {externalResults.map((item) => {
+                          const wcChip = wheelchairChip(item.wheelchair);
+                          const wcLabel = wcChip ? `, ${wcChip.text}` : '';
+                          return (
+                            <TouchableOpacity
+                              key={item.id}
+                              style={[
+                                tw`flex-row items-center py-2.5 px-2 rounded-xl mb-1`,
+                                { minHeight: 56 },
+                              ]}
+                              onPress={() => handleSelectDestination(item)}
+                              activeOpacity={0.7}
+                              accessible
+                              accessibilityRole="button"
+                              accessibilityLabel={`${item.title}, ${item.categoryLabel || 'Place'}, ${item.addressShort}, road distance ${item.roadDistanceText}, wheelchair estimate ${item.etaText}${wcLabel}`}
+                              accessibilityHint="Opens place details with a Directions button"
+                              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                            >
+                              <View
+                                style={[
+                                  tw`w-10 h-10 rounded-xl items-center justify-center mr-3`,
+                                  {
+                                    backgroundColor: isHighContrast
+                                      ? palette.surfaceAlt
+                                      : palette.secondaryBg,
+                                    borderWidth: isHighContrast ? borderWidth : 0,
+                                    borderColor: palette.border,
+                                  },
+                                ]}
+                              >
+                                <PlaceCategoryIcon icon={item.icon} size={17} color={palette.primary} />
+                              </View>
+
+                              <View style={tw`flex-1 mr-2`}>
+                                <Text
+                                  {...textProps}
+                                  style={[
+                                    tw`font-semibold`,
+                                    getTextStyle('sm', { isHighContrast }),
+                                    { color: palette.textPrimary },
+                                  ]}
+                                  numberOfLines={1}
+                                >
+                                  {item.title}
+                                </Text>
+                                <Text
+                                  {...textProps}
+                                  style={[
+                                    getTextStyle('xs', { isHighContrast }),
+                                    { color: palette.textMuted },
+                                  ]}
+                                  numberOfLines={1}
+                                >
+                                  {item.addressShort}
+                                </Text>
+                                <View style={tw`flex-row items-center mt-0.5`}>
+                                  <Text
+                                    {...textProps}
+                                    style={[
+                                      tw`font-bold`,
+                                      getTextStyle('xs', { isHighContrast }),
+                                      { color: isHighContrast ? palette.textPrimary : palette.primary },
+                                    ]}
+                                  >
+                                    {item.roadDistanceText}
+                                  </Text>
+                                  <Text
+                                    {...textProps}
+                                    style={[
+                                      getTextStyle('xs', { isHighContrast }),
+                                      { color: palette.textMuted },
+                                    ]}
+                                  >
+                                    {` · ♿ ${item.etaText}`}
+                                  </Text>
+                                  {wcChip && (
+                                    <View
+                                      style={[
+                                        tw`ml-1.5 px-1.5 py-0.5 rounded-full`,
+                                        {
+                                          backgroundColor: isHighContrast ? palette.surface : wcChip.bg,
+                                          borderColor: isHighContrast ? palette.textPrimary : wcChip.border,
+                                          borderWidth: 1,
+                                        },
+                                      ]}
+                                    >
+                                      <Text
+                                        {...textProps}
+                                        style={[
+                                          tw`font-bold`,
+                                          {
+                                            fontSize: 10,
+                                            color: isHighContrast ? palette.textPrimary : wcChip.color,
+                                          },
+                                        ]}
+                                      >
+                                        {wcChip.text}
+                                      </Text>
+                                    </View>
+                                  )}
+                                </View>
+                              </View>
+
+                              <Feather name="chevron-right" size={18} color={palette.textMuted} />
+                            </TouchableOpacity>
+                          );
+                        })}
+
+                        <Text
+                          {...textProps}
+                          style={[
+                            tw`px-1 pt-1`,
+                            getTextStyle('xs', { isHighContrast }),
+                            { color: palette.textMuted },
+                          ]}
+                        >
+                          © OpenStreetMap contributors
+                        </Text>
+                      </View>
                     )}
                   </ScrollView>
                 </View>

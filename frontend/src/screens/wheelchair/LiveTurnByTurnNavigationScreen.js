@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,9 @@ import { useSpeech } from '../../hooks/useSpeech';
 import { useLocation } from '../../hooks/useLocation';
 import { getTextStyle, textProps } from '../../theme/typography';
 import { calculateHaversineDistance, formatDistance } from '../../utils/mapMath';
+
+// Wheelchair-paced speed used for every ETA in this screen (~4.0 km/h).
+const WHEELCHAIR_SPEED_MPS = 1.1;
 
 /**
  * Default synthetic wheelchair turn-by-turn guidance steps
@@ -159,7 +162,7 @@ export const LiveTurnByTurnNavigationScreen = ({
 }) => {
   const { palette, borderWidth, isHighContrast } = useTheme();
   const { speak, stop: stopSpeech, isSpeaking } = useSpeech();
-  const { location: deviceLocation } = useLocation();
+  const { location: deviceLocation, recenter: recenterGps } = useLocation();
 
   // Navigation State
   const [isNavigating, setIsNavigating] = useState(true);
@@ -180,9 +183,20 @@ export const LiveTurnByTurnNavigationScreen = ({
       const end = coords[coords.length - 1];
 
       if (coords.length > 2) {
+        // Real per-segment distance from the actual geometry. The previous
+        // synthetic `45 + i*20` metres per vertex inflated the total by 4x-300x
+        // on real OSRM routes (a vertex exists every ~50-100 m of road, not
+        // every 20 m), which also inflated the ETA. Slope is unknown for
+        // street routes, so it is reported as n/a instead of invented.
         return coords.map((c, i) => {
           const isFirst = i === 0;
           const isLast = i === coords.length - 1;
+          const prev = isFirst ? null : coords[i - 1];
+          const segmentMeters = isFirst
+            ? 0
+            : Math.round(calculateHaversineDistance(
+                Number(prev[0]), Number(prev[1]), Number(c[0]), Number(c[1])
+              ));
           return {
             id: `step_${i + 1}`,
             instruction: isFirst
@@ -192,61 +206,79 @@ export const LiveTurnByTurnNavigationScreen = ({
               : `Continue along accessible route waypoint ${i + 1}.`,
             shortInstruction: isFirst ? 'Start along route' : isLast ? 'Arrived at Destination' : `Waypoint ${i + 1}`,
             maneuver: isFirst ? 'straight' : isLast ? 'arrive' : i % 2 === 0 ? 'turn-right' : 'turn-left',
-            distanceMeters: Math.round(45 + (i * 20)),
-            distanceText: `${Math.round(45 + (i * 20))} m`,
-            slope: (1.5 + (i * 0.8)).toFixed(1),
-            slopeLabel: `Slope: ${(1.5 + (i * 0.8)).toFixed(1)}° (Safe)`,
-            slopeStatus: 'safe',
-            surfaceType: 'Smooth Concrete',
-            curbCut: true,
+            distanceMeters: segmentMeters,
+            distanceText: formatDistance(segmentMeters),
+            // Street geometry carries no surveyed gradient — never claim ADA-safe.
+            slope: 0,
+            slopeLabel: 'Slope n/a (street)',
+            slopeUnknown: true,
+            slopeStatus: 'unknown',
+            surfaceType: 'Street surface',
+            curbCut: null,
             coords: [Number(c[0]), Number(c[1])],
           };
         });
       }
 
+      // Two-point route: the straight line IS the only geometry available, so
+      // report the real distance rather than fixed placeholder segments.
+      const straightMeters = Math.round(
+        calculateHaversineDistance(Number(start[0]), Number(start[1]), Number(end[0]), Number(end[1]))
+      );
       const mid1 = [start[0] + (end[0] - start[0]) * 0.33, start[1] + (end[1] - start[1]) * 0.33];
       const mid2 = [start[0] + (end[0] - start[0]) * 0.66, start[1] + (end[1] - start[1]) * 0.66];
+      // Split the real straight-line distance across the three legs by their
+      // true geometric share, so the parts always sum to the whole.
+      const d0 = Math.round(calculateHaversineDistance(start[0], start[1], mid1[0], mid1[1]));
+      const d1 = Math.round(calculateHaversineDistance(mid1[0], mid1[1], mid2[0], mid2[1]));
+      const d2 = Math.max(0, straightMeters - d0 - d1);
+      const leg1 = d0 > 0 ? d0 : straightMeters;
+      const leg2 = d1 > 0 ? d1 : straightMeters;
+      const leg3 = d2 > 0 ? d2 : 0;
       return [
         {
           id: 'step_1',
           instruction: `Head straight from ${originName} toward accessible route.`,
           shortInstruction: 'Head straight along path',
           maneuver: 'straight',
-          distanceMeters: 45,
-          distanceText: '45 m',
-          slope: 2.1,
-          slopeLabel: 'Slope: 2.1° (Safe)',
-          slopeStatus: 'safe',
-          surfaceType: 'Smooth Concrete',
-          curbCut: true,
+          distanceMeters: leg1,
+          distanceText: formatDistance(leg1),
+          slope: 0,
+          slopeLabel: 'Slope n/a (street)',
+          slopeUnknown: true,
+          slopeStatus: 'unknown',
+          surfaceType: 'Street surface',
+          curbCut: null,
           coords: start,
         },
         {
           id: 'step_2',
-          instruction: 'Turn right at the crossing using the tactile curb-cut ramp.',
-          shortInstruction: 'Turn right at tactile ramp',
+          instruction: 'Continue toward the crossing on the step-free side.',
+          shortInstruction: 'Continue to crossing',
           maneuver: 'turn-right',
-          distanceMeters: 65,
-          distanceText: '65 m',
-          slope: 2.8,
-          slopeLabel: 'Slope: 2.8° (Safe)',
-          slopeStatus: 'safe',
-          surfaceType: 'Tactile Pavers',
-          curbCut: true,
+          distanceMeters: leg2,
+          distanceText: formatDistance(leg2),
+          slope: 0,
+          slopeLabel: 'Slope n/a (street)',
+          slopeUnknown: true,
+          slopeStatus: 'unknown',
+          surfaceType: 'Street surface',
+          curbCut: null,
           coords: mid1,
         },
         {
           id: 'step_3',
-          instruction: 'Proceed along the smooth ADA ramp towards the building entrance.',
-          shortInstruction: 'Ascend ADA ramp',
+          instruction: 'Proceed towards the destination entrance.',
+          shortInstruction: 'Proceed to destination',
           maneuver: 'ramp-up',
-          distanceMeters: 50,
-          distanceText: '50 m',
-          slope: 4.2,
-          slopeLabel: 'Slope: 4.2° (ADA Safe)',
-          slopeStatus: 'safe',
-          surfaceType: 'High-Traction Concrete',
-          curbCut: false,
+          distanceMeters: leg3,
+          distanceText: formatDistance(leg3),
+          slope: 0,
+          slopeLabel: 'Slope n/a (street)',
+          slopeUnknown: true,
+          slopeStatus: 'unknown',
+          surfaceType: 'Street surface',
+          curbCut: null,
           coords: mid2,
         },
         {
@@ -254,13 +286,13 @@ export const LiveTurnByTurnNavigationScreen = ({
           instruction: `Arrive at step-free accessible entrance for ${destinationName}.`,
           shortInstruction: 'Arrived at Destination',
           maneuver: 'arrive',
-          distanceMeters: 10,
-          distanceText: '10 m',
+          distanceMeters: 0,
+          distanceText: 'Arrived',
           slope: 0.0,
           slopeLabel: 'Destination Reached',
           slopeStatus: 'safe',
-          surfaceType: 'Smooth Concrete',
-          curbCut: false,
+          surfaceType: 'Street surface',
+          curbCut: null,
           coords: end,
         },
       ];
@@ -290,16 +322,113 @@ export const LiveTurnByTurnNavigationScreen = ({
     return routeCoordinates[0] || [6.9271, 79.8612];
   }, [currentStep, deviceLocation, routeCoordinates]);
 
-  // Remaining route calculations
+  // Remaining route calculations. Steps now carry real segment distances, so
+  // this sum equals the true polyline length.
   const remainingSteps = navigationSteps.slice(currentStepIndex);
   const remainingDistanceMeters = useMemo(() => {
-    return remainingSteps.reduce((sum, s) => sum + (s.distanceMeters || 50), 0);
+    const sum = remainingSteps.reduce((s, st) => s + (Number(st.distanceMeters) || 0), 0);
+    // The "arrive" step carries 0 m; guard against an all-zero remainder so
+    // the ETA bar never collapses to 0 min while still navigating.
+    return sum > 0 ? sum : 0;
   }, [remainingSteps]);
 
+  const totalRouteDistanceM = useMemo(() => {
+    return navigationSteps.reduce((sum, st) => sum + (Number(st.distanceMeters) || 0), 0);
+  }, [navigationSteps]);
+
+  // Wheelchair ETA from the real remaining distance at the wheelchair pace.
   const remainingEtaMins = useMemo(() => {
-    const seconds = remainingDistanceMeters / 1.1;
-    return Math.max(1, Math.round(seconds / 60));
+    if (remainingDistanceMeters <= 0) return 0;
+    return Math.max(1, Math.round(remainingDistanceMeters / WHEELCHAIR_SPEED_MPS / 60));
   }, [remainingDistanceMeters]);
+
+  // ── HUD-1/2/4: live navigation telemetry ──────────────────────────────
+  const hasGpsFix = Number.isFinite(deviceLocation?.latitude)
+    && Number.isFinite(deviceLocation?.longitude);
+
+  // Live countdown: GPS → current step target (falls back to static step distance).
+  const liveStepDistanceM = useMemo(() => {
+    const target = currentStep?.coords;
+    if (
+      hasGpsFix && Array.isArray(target) && target.length >= 2
+      && Number.isFinite(Number(target[0])) && Number.isFinite(Number(target[1]))
+    ) {
+      return Math.max(
+        0,
+        Math.round(calculateHaversineDistance(
+          deviceLocation.latitude, deviceLocation.longitude,
+          Number(target[0]), Number(target[1])
+        ))
+      );
+    }
+    return Number(currentStep?.distanceMeters) || 0;
+  }, [hasGpsFix, deviceLocation?.latitude, deviceLocation?.longitude, currentStep]);
+
+  // "Then…" preview: the step after the current one (Google-Maps pattern).
+  const nextStep = navigationSteps[currentStepIndex + 1] || null;
+
+  // Progress fraction for the on-map progress bar (totalRouteDistanceM is
+  // already derived from real step distances above).
+  const progressFraction = useMemo(() => {
+    if (!totalRouteDistanceM || totalRouteDistanceM <= 0) return 0;
+    return Math.min(1, Math.max(0, 1 - remainingDistanceMeters / totalRouteDistanceM));
+  }, [remainingDistanceMeters, totalRouteDistanceM]);
+
+  // Off-route detection: GPS farther than 25 m from every route coordinate.
+  const deviationM = useMemo(() => {
+    if (!hasGpsFix || !Array.isArray(routeCoordinates) || routeCoordinates.length === 0) return 0;
+    let min = Infinity;
+    for (const c of routeCoordinates) {
+      if (!Array.isArray(c) || c.length < 2) continue;
+      const d = calculateHaversineDistance(
+        deviceLocation.latitude, deviceLocation.longitude,
+        Number(c[0]), Number(c[1])
+      );
+      if (d < min) min = d;
+    }
+    return Number.isFinite(min) ? Math.round(min) : 0;
+  }, [hasGpsFix, deviceLocation?.latitude, deviceLocation?.longitude, routeCoordinates]);
+
+  const isOffRoute = isNavigating && !hasArrived && hasGpsFix && deviationM > 25;
+
+  // Live GPS speed (m/s); falls back to wheelchair pace assumption.
+  const liveSpeedMs = Number.isFinite(Number(deviceLocation?.speed)) && Number(deviceLocation.speed) >= 0
+    ? Number(deviceLocation.speed)
+    : null;
+
+  const liveHeading = Number.isFinite(Number(deviceLocation?.heading)) && Number(deviceLocation.heading) >= 0
+    ? Number(deviceLocation.heading)
+    : null;
+
+  // One-shot "approaching" cue when the countdown crosses below 25 m per step.
+  const approachAnnouncedRef = useRef(-1);
+  useEffect(() => {
+    if (!isNavigating || hasArrived || isVoiceMuted) return;
+    if (liveStepDistanceM > 0 && liveStepDistanceM <= 25 && approachAnnouncedRef.current !== currentStepIndex) {
+      approachAnnouncedRef.current = currentStepIndex;
+      try {
+        speak(`In ${Math.round(liveStepDistanceM)} meters, ${currentStep?.shortInstruction || currentStep?.instruction || ''}`);
+      } catch (_) {}
+    }
+    if (liveStepDistanceM > 25) {
+      // Re-arm when moving to a fresh step far away (step index change resets anyway).
+    }
+  }, [liveStepDistanceM, isNavigating, hasArrived, isVoiceMuted, currentStepIndex, currentStep, speak]);
+
+  // Compass tap: snap GPS (BaseMap already auto-centers on the live position).
+  const handleRecenterMap = useCallback(async () => {
+    try {
+      if (typeof recenterGps === 'function') await recenterGps();
+    } catch (_) {}
+  }, [recenterGps]);
+
+  // Arrival Done: finish silently (no confirm dialog on arrival).
+  const handleFinishTrip = useCallback(() => {
+    try { stopSpeech(); } catch (_) {}
+    setIsNavigating(false);
+    setIsSimulating(false);
+    if (onExitNavigation) onExitNavigation();
+  }, [stopSpeech, onExitNavigation]);
 
   // Trigger haptic and voice feedback when step changes
   const announceStep = useCallback(
@@ -583,8 +712,13 @@ export const LiveTurnByTurnNavigationScreen = ({
           </View>
           <View style={styles.maneuverTextContainer}>
             <View style={styles.maneuverDistanceRow}>
-              <Text style={[styles.maneuverDistanceText, { color: isHighContrast ? '#FFFFFF' : '#86EFAC' }]}>
-                {currentStep?.distanceText || `${currentStep?.distanceMeters || 0} m`}
+              <Text
+                accessible
+                accessibilityRole="text"
+                accessibilityLabel={`${formatDistance(liveStepDistanceM)} to ${currentStep?.shortInstruction || 'next maneuver'}`}
+                style={[styles.maneuverDistanceText, { color: isHighContrast ? '#FFFFFF' : '#86EFAC' }]}
+              >
+                {formatDistance(liveStepDistanceM)}
               </Text>
               <View
                 style={[
@@ -597,13 +731,21 @@ export const LiveTurnByTurnNavigationScreen = ({
                 ]}
               >
                 <Text style={[styles.slopeBadgeText, { color: isHighContrast ? '#000000' : '#BBF7D0' }]}>
-                  {currentStep?.slopeLabel || `Incline: ${currentStep?.slope || 0}°`}
+                  {currentStep?.slopeLabel || 'Slope n/a (street)'}
                 </Text>
               </View>
             </View>
             <Text style={[styles.maneuverInstructionText, { color: '#FFFFFF' }]} numberOfLines={2}>
               {currentStep?.instruction}
             </Text>
+            {nextStep && !hasArrived && (
+              <Text
+                style={[styles.maneuverThenText, { color: isHighContrast ? '#FFFFFF' : '#A7F3D0' }]}
+                numberOfLines={1}
+              >
+                {`Then ${nextStep.shortInstruction || nextStep.instruction}`}
+              </Text>
+            )}
           </View>
         </View>
       </View>
@@ -623,6 +765,103 @@ export const LiveTurnByTurnNavigationScreen = ({
           palette={palette}
           style={styles.baseMap}
         />
+
+        {/* ── HUD-2: route progress bar (top edge of map) ── */}
+        <View
+          style={[
+            styles.hudProgressTrack,
+            { backgroundColor: isHighContrast ? '#FFFFFF' : 'rgba(255,255,255,0.7)' },
+          ]}
+          accessible
+          accessibilityRole="progressbar"
+          accessibilityLabel={`Route progress ${Math.round(progressFraction * 100)} percent`}
+        >
+          <View
+            style={[
+              styles.hudProgressFill,
+              {
+                width: `${Math.round(progressFraction * 100)}%`,
+                backgroundColor: isHighContrast ? '#000000' : '#10B981',
+              },
+            ]}
+          />
+        </View>
+
+        {/* ── HUD-4: off-route banner ── */}
+        {isOffRoute && (
+          <View
+            style={[
+              styles.hudOffRouteBanner,
+              {
+                backgroundColor: isHighContrast ? '#FFFFFF' : '#FFFBEB',
+                borderColor: isHighContrast ? '#000000' : '#F59E0B',
+              },
+            ]}
+            accessible
+            accessibilityRole="alert"
+            accessibilityLabel={`Off route by ${formatDistance(deviationM)}. Tap recenter to snap back.`}
+          >
+            <MaterialIcons name="warning-amber" size={16} color={isHighContrast ? '#000000' : '#D97706'} />
+            <Text style={[styles.hudOffRouteText, { color: isHighContrast ? '#000000' : '#92400E' }]} numberOfLines={2}>
+              {`Off route (${formatDistance(deviationM)}) — recentering…`}
+            </Text>
+            <TouchableOpacity
+              onPress={handleRecenterMap}
+              accessible
+              accessibilityRole="button"
+              accessibilityLabel="Recenter on my location"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={[
+                styles.hudOffRouteBtn,
+                { backgroundColor: isHighContrast ? '#000000' : '#D97706' },
+              ]}
+            >
+              <Text style={styles.hudOffRouteBtnText}>Recenter</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ── HUD-2: live speed pill (top-left) ── */}
+        <View
+          style={[
+            styles.hudSpeedPill,
+            {
+              backgroundColor: isHighContrast ? '#FFFFFF' : palette.surface,
+              borderColor: isHighContrast ? '#000000' : palette.cardBorder,
+              borderWidth,
+            },
+          ]}
+          accessible
+          accessibilityLabel={liveSpeedMs != null ? `Current speed ${liveSpeedMs.toFixed(1)} meters per second` : 'Wheelchair pace 1.1 meters per second assumed'}
+        >
+          <MaterialCommunityIcons name="speedometer" size={14} color={isHighContrast ? '#000000' : '#15803D'} />
+          <Text style={[styles.hudSpeedText, { color: isHighContrast ? '#000000' : palette.textPrimary }]}>
+            {liveSpeedMs != null ? `${liveSpeedMs.toFixed(1)} m/s` : '1.1 m/s'}
+          </Text>
+        </View>
+
+        {/* ── HUD-2: compass + recenter (top-right, ≥48dp) ── */}
+        <TouchableOpacity
+          onPress={handleRecenterMap}
+          activeOpacity={0.8}
+          accessible
+          accessibilityRole="button"
+          accessibilityLabel={liveHeading != null ? `Compass heading ${Math.round(liveHeading)} degrees. Tap to recenter on my location.` : 'Recenter on my location'}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={[
+            styles.hudCompassBtn,
+            {
+              backgroundColor: isHighContrast ? '#FFFFFF' : palette.surface,
+              borderColor: isHighContrast ? '#000000' : palette.cardBorder,
+              borderWidth,
+              ...(!isHighContrast ? styles.cardShadow : {}),
+            },
+          ]}
+        >
+          <View style={{ transform: [{ rotate: `${liveHeading != null ? liveHeading : 0}deg` }] }}>
+            <MaterialIcons name="navigation" size={22} color={isHighContrast ? '#000000' : '#0B3D2E'} />
+          </View>
+        </TouchableOpacity>
 
         {/* Floating Audio Cue Trigger Button over map */}
         <TouchableOpacity
@@ -673,7 +912,10 @@ export const LiveTurnByTurnNavigationScreen = ({
         <View style={styles.telemetrySummaryRow}>
           <View style={styles.telemetryGroup}>
             <Text style={[styles.telemetryBigEta, { color: isHighContrast ? '#000000' : '#0B3D2E' }]}>
-              {remainingEtaMins} <Text style={[styles.telemetryEtaUnit, { color: isHighContrast ? '#000000' : '#15803D' }]}>min</Text>
+              {hasArrived
+                ? '0'
+                : remainingEtaMins}{' '}
+              <Text style={[styles.telemetryEtaUnit, { color: isHighContrast ? '#000000' : '#15803D' }]}>min</Text>
             </Text>
             <Text style={[styles.telemetrySubInfo, { color: palette.textMuted }]}>
               {formatDistance(remainingDistanceMeters)} • Step {currentStepIndex + 1} of {totalSteps}
@@ -705,10 +947,76 @@ export const LiveTurnByTurnNavigationScreen = ({
               ]}
             >
               <MaterialCommunityIcons name="angle-acute" size={13} color={isHighContrast ? '#000000' : '#059669'} />
-              <Text style={[styles.miniPillText, { color: isHighContrast ? '#000000' : '#047857' }]}>{currentStep?.slope || 0}°</Text>
+              <Text style={[styles.miniPillText, { color: isHighContrast ? '#000000' : '#047857' }]}>
+                {currentStep?.slopeUnknown ? 'n/a' : `${currentStep?.slope || 0}°`}
+              </Text>
             </View>
           </View>
         </View>
+
+        {/* ── HUD-3: step progress dots ── */}
+        <View
+          style={styles.hudDotsRow}
+          accessible
+          accessibilityRole="progressbar"
+          accessibilityLabel={`Step ${currentStepIndex + 1} of ${totalSteps}`}
+        >
+          {navigationSteps.map((_, idx) => {
+            const isDone = idx < currentStepIndex;
+            const isCurrent = idx === currentStepIndex;
+            return (
+              <View
+                key={`dot_${idx}`}
+                style={[
+                  styles.hudDot,
+                  {
+                    backgroundColor: isCurrent
+                      ? (isHighContrast ? '#000000' : '#0B3D2E')
+                      : isDone
+                      ? (isHighContrast ? '#000000' : '#10B981')
+                      : (isHighContrast ? '#FFFFFF' : '#D1D5DB'),
+                    borderColor: isHighContrast ? '#000000' : 'transparent',
+                    borderWidth: isHighContrast ? 1 : 0,
+                    transform: [{ scale: isCurrent ? 1.35 : 1 }],
+                  },
+                ]}
+              />
+            );
+          })}
+        </View>
+
+        {/* ── HUD-3: arrival trip summary ── */}
+        {hasArrived && (
+          <View
+            style={[
+              styles.hudArrivalCard,
+              {
+                backgroundColor: isHighContrast ? '#FFFFFF' : '#ECFDF5',
+                borderColor: isHighContrast ? '#000000' : '#6EE7B7',
+              },
+            ]}
+            accessible
+            accessibilityLabel={`Arrived at ${destinationName}. Trip total ${formatDistance(totalRouteDistanceM)}.`}
+          >
+            <MaterialIcons name="check-circle" size={20} color={isHighContrast ? '#000000' : '#059669'} />
+            <Text style={[styles.hudArrivalText, { color: isHighContrast ? '#000000' : '#065F46' }]} numberOfLines={2}>
+              {`Arrived • ${formatDistance(totalRouteDistanceM)} total`}
+            </Text>
+            <TouchableOpacity
+              onPress={handleFinishTrip}
+              accessible
+              accessibilityRole="button"
+              accessibilityLabel="Finish trip and return to map"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={[
+                styles.hudArrivalDoneBtn,
+                { backgroundColor: isHighContrast ? '#000000' : '#0B3D2E' },
+              ]}
+            >
+              <Text style={styles.hudArrivalDoneText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Action Controls Row (≥48dp touch targets) */}
         <View style={styles.actionButtonsRow}>
@@ -1087,6 +1395,128 @@ const styles = StyleSheet.create({
   floatingAudioFabText: {
     fontSize: 13,
     fontWeight: '700',
+  },
+  maneuverThenText: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  /* ── HUD-2: on-map cluster ── */
+  hudProgressTrack: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 5,
+    zIndex: 20,
+  },
+  hudProgressFill: {
+    height: 5,
+    borderTopRightRadius: 3,
+    borderBottomRightRadius: 3,
+  },
+  hudSpeedPill: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    gap: 6,
+    minHeight: 44,
+    zIndex: 20,
+  },
+  hudSpeedText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  hudCompassBtn: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 20,
+  },
+  hudOffRouteBanner: {
+    position: 'absolute',
+    top: 66,
+    left: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    gap: 8,
+    zIndex: 21,
+  },
+  hudOffRouteText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  hudOffRouteBtn: {
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hudOffRouteBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  /* ── HUD-3: dots + arrival ── */
+  hudDotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 8,
+    minHeight: 44,
+  },
+  hudDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+  },
+  hudArrivalCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    gap: 8,
+    marginBottom: 10,
+  },
+  hudArrivalText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  hudArrivalDoneBtn: {
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    minHeight: 48,
+    minWidth: 76,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hudArrivalDoneText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
   },
   bottomDeck: {
     paddingHorizontal: 14,

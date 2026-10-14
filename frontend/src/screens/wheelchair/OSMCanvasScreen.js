@@ -4,7 +4,7 @@ import UnityMapScreen from './UnityMapScreen';
 /**
  * OSM Map Canvas Screen
  * Delegates to UnityMapScreen which renders the full
- * react-native-maps + OpenStreetMap interactive map.
+ * Leaflet (WebView) interactive map on keyless Esri/OSM raster tiles.
  */
 export const OSMCanvasScreen = () => <UnityMapScreen />;
 

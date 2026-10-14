@@ -39,7 +39,8 @@ app.get('/', (req, res) => {
   res.send('UnityMap API Server is Running 🚀');
 });
 
-// Health check endpoint
+// Health check endpoint (includes feature flags so the app can detect an
+// outdated backend — e.g. a stale process serving old code on the same port).
 app.get('/api/health', (req, res) => {
   const state = require('mongoose').connection.readyState;
   const states = {
@@ -54,8 +55,34 @@ app.get('/api/health', (req, res) => {
     database: states[state] || 'Unknown',
     dbName: process.env.DB_NAME || 'UnityMap',
     timestamp: new Date(),
+    features: ['places-search'],
   });
 });
+
+// Lists every mounted API route (used for the boot inventory print below,
+// so a missing route is visible in the terminal immediately on startup).
+const listMountedRoutes = () => {
+  const paths = [];
+  const walk = (stack) => {
+    for (const layer of stack || []) {
+      try {
+        if (layer.route && layer.route.path) {
+          const methods = Object.keys(layer.route.methods || {})
+            .filter((m) => layer.route.methods[m])
+            .map((m) => m.toUpperCase())
+            .join(',');
+          paths.push(`${methods || 'ALL'} ${layer.route.path}`);
+        } else if (layer.handle && layer.handle.stack) {
+          walk(layer.handle.stack);
+        }
+      } catch (_) {}
+    }
+  };
+  try {
+    walk(apiRoutes.stack);
+  } catch (_) {}
+  return paths;
+};
 
 // API Routes
 app.use('/api', apiRoutes);
@@ -130,18 +157,36 @@ const printLanHint = (port) => {
   }
 };
 
-const startServer = (port) => {
+const startServer = (port, bumped = false) => {
   const server = app.listen(port, () => {
     console.log(`🚀 UnityMap Backend Server listening on port ${port}`);
     console.log(`📡 Health Check URL: http://localhost:${port}/api/health`);
     console.log(`📡 API Base URL:     http://localhost:${port}/api`);
+    if (bumped) {
+      console.warn('⚠️⚠️  STARTED ON A BUMPED PORT — another (possibly OLD) backend still holds the');
+      console.warn('⚠️⚠️  configured PORT. The phone app pins the configured port, so it will keep');
+      console.warn('⚠️⚠️  hitting the OLD server (e.g. /api/places/search → 404). Kill the stale');
+      console.warn('⚠️⚠️  node process first, then restart this backend on the configured port.');
+    }
+    // Boot route inventory — a missing route (e.g. /places/search) is visible
+    // here immediately, before any phone ever calls it.
+    const routes = listMountedRoutes();
+    // placeSearchRoutes mounts GET /search under /places → full path /api/places/search
+    const hasPlacesSearch = routes.some((r) => r.endsWith('/search'));
+    console.log(`🗺️  Mounted API routes: ${routes.length} (places-search: ${hasPlacesSearch ? '✅ PRESENT' : '❌ MISSING'})`);
+    if (!hasPlacesSearch) {
+      console.warn('❌ /api/places/search is NOT mounted — universal place search will 404.');
+      console.warn('   Check backend/src/routes/index.js mounts placeSearchRoutes under /places.');
+    } else {
+      console.log(`   e.g. ${routes.filter((r) => r.endsWith('/search')).join(', ')}`);
+    }
     printLanHint(port);
   });
 
   server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
       console.warn(`⚠️ Port ${port} is already in use (e.g. macOS AirPlay Receiver). Retrying on port ${port + 1}...`);
-      startServer(port + 1);
+      startServer(port + 1, true);
     } else {
       console.error('❌ Server startup error:', err);
     }

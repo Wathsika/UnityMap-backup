@@ -10,6 +10,32 @@ if (Platform.OS !== 'web') {
 }
 
 /**
+ * Basemap provider selection (keyless by default).
+ * - `esri` (default): Esri World Street Map + World Imagery satellite toggle +
+ *   Dark Gray canvas for high-contrast mode. No key, no signup.
+ * - `carto`: CARTO Voyager raster. Requires EXPO_PUBLIC_CARTO_KEY (free at
+ *   carto.com/basemaps/apikey) since CARTO blocked keyless tiles on 25 Sep 2026.
+ * - `osm`: OpenStreetMap standard tiles. Keyless, but strict tile-usage policy
+ *   (may 403 inside WebViews without a Referer) — kept as fallback only.
+ */
+const TILE_MODE = (() => {
+  try {
+    const m = String(process.env?.EXPO_PUBLIC_MAP_TILES || 'esri').toLowerCase().trim();
+    return ['esri', 'carto', 'osm'].includes(m) ? m : 'esri';
+  } catch (e) {
+    return 'esri';
+  }
+})();
+
+const CARTO_KEY = (() => {
+  try {
+    return String(process.env?.EXPO_PUBLIC_CARTO_KEY || '').trim();
+  } catch (e) {
+    return '';
+  }
+})();
+
+/**
  * BaseMap.js - Free Styled OpenStreetMap Component
  * Powered by Leaflet & Tailwind CSS styling. Supports Web & Native platforms.
  * Features:
@@ -63,6 +89,49 @@ const BaseMap = ({
   const primary = palette?.primary || (isHighContrast ? '#000000' : '#1E6F50');
   const cardBorder = palette?.cardBorder || (isHighContrast ? '#000000' : '#F1F5F9');
   const textPrimary = palette?.textPrimary || (isHighContrast ? '#000000' : '#1E293B');
+
+  // Initial basemap: high-contrast users start on the dark canvas (readable),
+  // everyone else on streets. In-map layer control allows switching anytime.
+  const defaultBasemap = TILE_MODE === 'esri' && isHighContrast ? 'dark' : 'streets';
+
+  // Leaflet basemap bootstrap script (injected into mapHtml, no backticks or
+  // ${} inside — outer template would interpolate them).
+  const basemapScript = useMemo(() => {
+    const L = [];
+    L.push("var ATTRIB_OSM = '© <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors';");
+    L.push("var ATTRIB_ESRI = ATTRIB_OSM + ', Esri, TomTom, Garmin, FAO, NOAA, USGS';");
+    L.push('var _baseLayers = {};');
+    L.push('var _defaultBase = ' + JSON.stringify(defaultBasemap) + ';');
+    if (TILE_MODE === 'carto' && CARTO_KEY) {
+      L.push("var _carto = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=" + CARTO_KEY + "', { maxZoom: 20, subdomains: 'abcd', attribution: ATTRIB_OSM + ', © <a href=\"https://carto.com/attribution/\">CARTO</a>' });");
+      L.push("_baseLayers = { 'Streets': _carto };");
+      L.push("_carto.addTo(map);");
+    } else if (TILE_MODE === 'osm' || (TILE_MODE === 'carto' && !CARTO_KEY)) {
+      // OSM fallback (also used when CARTO mode lacks a key): keyless standard
+      // tiles. Note OSM tile policy may 403 WebView requests without a Referer.
+      L.push("var _osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: ATTRIB_OSM });");
+      L.push("_baseLayers = { 'Streets': _osm };");
+      L.push("_osm.addTo(map);");
+    } else {
+      // Esri default: streets + satellite (imagery + place labels) + dark canvas.
+      // Esri order is {z}/{y}/{x} — NOT {z}/{x}/{y}.
+      L.push("var _esriStreets = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: ATTRIB_ESRI });");
+      L.push("var _esriSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: ATTRIB_ESRI });");
+      L.push("var _esriSatRef = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });");
+      L.push("var _esriSatellite = L.layerGroup([_esriSat, _esriSatRef]);");
+      L.push("var _esriDark = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: ATTRIB_ESRI });");
+      L.push("var _esriDarkRef = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });");
+      L.push("var _esriDarkCanvas = L.layerGroup([_esriDark, _esriDarkRef]);");
+      L.push("_baseLayers = { 'Streets': _esriStreets, 'Satellite': _esriSatellite, 'Dark canvas': _esriDarkCanvas };");
+      L.push("var _initial = _defaultBase === 'dark' ? _esriDarkCanvas : _esriStreets;");
+      L.push("_initial.addTo(map);");
+      L.push("L.control.layers(_baseLayers, null, { position: 'topright', collapsed: true }).addTo(map);");
+    }
+    // RN-side switcher (no WebView reload): window.switchBasemap('satellite')
+    L.push("window.switchBasemap = function(name) { try { var l = _baseLayers[name]; if (!l) return false; Object.keys(_baseLayers).forEach(function(k) { if (map.hasLayer(_baseLayers[k])) map.removeLayer(_baseLayers[k]); }); l.addTo(map); return true; } catch (e) { return false; } };");
+    L.push("window.availableBasemaps = function() { try { return Object.keys(_baseLayers); } catch (e) { return []; } };");
+    return L.join('\n    ');
+  }, [defaultBasemap]);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Static HTML: tile layer, CSS, user-dot, markers, pathways.
@@ -226,6 +295,15 @@ const BaseMap = ({
     @keyframes dashOffset {
       to { stroke-dashoffset: -100; }
     }
+
+    /* Basemap layer switcher: >=44px touch target, theme-aware */
+    .leaflet-control-layers { background: ${surface}; color: ${textPrimary}; border-radius: 10px; ${isHighContrast ? 'border: 2px solid #000000;' : 'box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: 1px solid ' + cardBorder + ';'} font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .leaflet-control-layers-toggle { width: 44px !important; height: 44px !important; }
+    .leaflet-control-layers-expanded { padding: 10px 12px; font-size: 13px; font-weight: 600; }
+    .leaflet-control-layers-expanded label { display: flex; align-items: center; gap: 8px; padding: 6px 2px; min-height: 44px; }
+    .leaflet-control-layers-expanded input { width: 18px; height: 18px; }
+    .leaflet-control-attribution { background: rgba(255,255,255,0.85) !important; color: #334155; padding: 2px 6px; }
+    .leaflet-control-attribution a { color: #1E6F50; }
   </style>
 </head>
 <body>
@@ -246,15 +324,13 @@ const BaseMap = ({
       center: initialCenter,
       zoom: ${zoom},
       zoomControl: false,
-      attributionControl: false
+      attributionControl: true
     });
 
     window.mapInstance = map;
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      subdomains: 'abcd'
-    }).addTo(map);
+    // ── Basemap layers (keyless Esri default; see TILE_MODE above) ──────
+    ${basemapScript}
 
     // ── User Location Marker ───────────────────────────────────────────
     const userIcon = L.divIcon({
@@ -533,6 +609,7 @@ const BaseMap = ({
     pathways,
     autoFitBounds,
     isReduceMotionEnabled,
+    basemapScript,
     // NOTE: `routes` and `activeRouteId` are intentionally omitted — route
     // changes are handled via injectJavaScript in the useEffect below.
   ]);
