@@ -16,7 +16,7 @@ import { isDirectUploadConfigured, uploadToCloudinary } from '../../utils/cloudi
 // point that once collapsed every upload tier into a false photo error.
 import * as LegacyFS from 'expo-file-system/legacy';
 import { useLocation } from '../../hooks/useLocation';
-import { buildBarrierReportPayload, validateBarrierReportPayload } from '../../services/reportPayload';
+import { toBarrierReportFields } from '../../utils/exifHelper';
 import CorroborateButton from '../../components/CorroborateButton';
 import { calculateHaversineDistance } from '../../utils/mapMath';
 import authService from '../../services/authService';
@@ -904,7 +904,7 @@ export const ThreeTapReportScreen = ({ onSuccess, onNavigateToMap, navigation })
         setManualCoords({ latitude: coords.latitude, longitude: coords.longitude });
         try { announce && announce('Current device location applied'); } catch {}
       } else {
-        setErrorMsg('Unable to retrieve current location. Please enable location services.');
+        setErrorMsg('Unable to retrieve current location. Please enable GPS.');
       }
     } catch (e) {
       setErrorMsg(e?.message || 'Failed to get current location.');
@@ -959,7 +959,7 @@ export const ThreeTapReportScreen = ({ onSuccess, onNavigateToMap, navigation })
       return;
     }
     if (!imageUri) {
-      setErrorMsg('Photo is required. Please add a photo in Step 2.');
+      setErrorMsg('Photo is required. Please capture a geotagged photo in Step 2.');
       setStep(2);
       return;
     }
@@ -1007,39 +1007,91 @@ export const ThreeTapReportScreen = ({ onSuccess, onNavigateToMap, navigation })
       return;
     }
 
-    // SPT-206: package via the reportPayload service — EXIF + fallback coords,
-    // category chip, rating, notes and photo in one backend-aligned contract.
+    // Transform EXIF + form data using helper with fallbackCoordinates — same as admin
+    const barrierFields = toBarrierReportFields(
+      {
+        latitude: exifResult?.latitude ?? latitude,
+        longitude: exifResult?.longitude ?? longitude,
+        altitude: exifResult?.altitude ?? null,
+        capturedAt: exifResult?.capturedAt ?? null,
+        hasGps: true,
+        hasTimestamp: !!exifResult?.capturedAt,
+      },
+      fallbackCoordinates
+    );
+
+    const finalLat = barrierFields.coordinates.latitude ?? latitude;
+    const finalLng = barrierFields.coordinates.longitude ?? longitude;
+
+    // Admin-parity resolution for name, locationName, condition, capturedAt
+    const resolvedName = (name && name.trim()) || (category ? `${category} Barrier` : 'Barrier Report');
+    const resolvedLocationName = (locationName && locationName.trim()) || `Volunteer Report ${finalLat.toFixed(3)}, ${finalLng.toFixed(3)}`;
+    const resolvedCondition = condition || 'bad';
+    const resolvedCapturedAt = (() => {
+      if (capturedAt) {
+        const d = new Date(capturedAt);
+        if (!Number.isNaN(d.getTime())) return d.toISOString();
+      }
+      if (barrierFields.capturedAt instanceof Date) return barrierFields.capturedAt.toISOString();
+      if (barrierFields.capturedAt) return String(barrierFields.capturedAt);
+      return new Date().toISOString();
+    })();
+
     const currentUser = authService.getCurrentUser();
-    const { payload, photoMeta: effectivePhotoMeta } = buildBarrierReportPayload({
+    // Sanitize reporterId: demo/offline ids (e.g. 'UM-123') are not Mongo ObjectIds —
+    // submit anonymously so the save succeeds instead of 500ing on a CastError.
+    const rawReporterId = currentUser?._id || currentUser?.id || undefined;
+    const reporterId = typeof rawReporterId === 'string' && /^[0-9a-fA-F]{24}$/.test(rawReporterId)
+      ? rawReporterId
+      : undefined;
+
+    // MongoDB-aligned document — matches BarrierReport schema + reportController.js expectations.
+    // Direct persist target: HTTP POST /api/reports (multipart `photo` or JSON `photoUrl`).
+    const exifMetadata = {
+      latitude: finalLat,
+      longitude: finalLng,
+      altitude: exifResult?.altitude ?? null,
+      timestamp: resolvedCapturedAt,
+      capturedAt: resolvedCapturedAt,
+    };
+    const payload = {
+      name: resolvedName,
+      locationName: resolvedLocationName,
       category,
       rating,
-      notes,
-      name,
-      locationName,
-      condition,
-      latitude,
-      longitude,
-      fallbackCoordinates,
-      exifResult,
-      capturedAt,
-      imageUri,
-      photoFile,
-      reporterId: currentUser?._id || currentUser?.id,
-      platformOs: Platform.OS,
-      logger: logPhotoShape,
-    });
-    // Client-side mirror of the backend 400 rules — fail fast with a field
-    // error instead of round-tripping a rejection.
-    const payloadCheck = validateBarrierReportPayload(payload, { hasPhoto: !!effectivePhotoMeta });
-    if (!payloadCheck.isValid) {
-      const firstErr =
-        payloadCheck.errors.category ||
-        payloadCheck.errors.rating ||
-        payloadCheck.errors.photo ||
-        payloadCheck.errors.coordinates ||
-        Object.values(payloadCheck.errors)[0];
-      setErrorMsg(firstErr);
-      return;
+      condition: resolvedCondition,
+      triageStatus: 'pending',
+      notes: notes?.trim() || undefined,
+      photoUrl: photoFile ? undefined : imageUri,
+      coordinates: { latitude: finalLat, longitude: finalLng },
+      location: { type: 'Point', coordinates: [finalLng, finalLat] },
+      latitude: finalLat,
+      longitude: finalLng,
+      exifMetadata,
+      capturedAt: resolvedCapturedAt,
+      timestamp: resolvedCapturedAt,
+      reporterId,
+    };
+    // Spec-formatted image part for multipart body (fixes Unsupported FormDataPart).
+    // MIME prefers the picker's declared type, else the URI extension.
+    const photoMeta = photoFile
+      ? (Platform.OS !== 'web'
+          ? (() => {
+              const uri = photoFile.uri || photoFile;
+              return { uri, name: photoFile.name || photoFile.fileName || 'barrier.jpg', type: mimeFromUri(uri, photoFile.type) };
+            })()
+          : photoFile)
+      : null;
+
+    // Auto-upload: File objects can't survive storage reload, but the persisted local
+    // URI is rebuilt verbatim into a multipart part — NO existence pre-checks, NO byte
+    // reads. Readability is proven by attempting the upload tiers themselves; stat
+    // gates caused false "Photo attachment failed" modals. Never JSON-submit a
+    // device-local URI (backend 400s those).
+    let effectivePhotoMeta = photoMeta;
+    if (!effectivePhotoMeta && imageUri && typeof imageUri === 'string' && Platform.OS !== 'web' && /^(file|content|ph):\/\//i.test(imageUri)) {
+      effectivePhotoMeta = { uri: imageUri, name: `photo_${Date.now()}.jpg`, type: mimeFromUri(imageUri) };
+      logPhotoShape('PHOTO_REBUILT', effectivePhotoMeta);
     }
 
     const resetWizard = async () => {
@@ -1335,7 +1387,7 @@ export const ThreeTapReportScreen = ({ onSuccess, onNavigateToMap, navigation })
         {step === 2 && (
           <View>
             <Text {...textProps} style={[styles.sectionLabel, getTextStyle('base', { isHighContrast }), { color: palette.textPrimary }]}>
-              2. Add a Photo
+              2. Capture Photo &amp; EXIF
             </Text>
             <View style={styles.exifEmbedWrap}>
               <EXIFCaptureScreen onCaptured={handleCaptured} onBack={handleBack} preserveDraftOnBack initialUri={imageUri} initialExifResult={exifResult} />
@@ -1352,7 +1404,7 @@ export const ThreeTapReportScreen = ({ onSuccess, onNavigateToMap, navigation })
                   disabled={fallbackLoading || submitting}
                   activeOpacity={0.7}
                   accessibilityRole="button"
-                  accessibilityLabel="Use current location"
+                  accessibilityLabel="Use current GPS location"
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   {fallbackLoading ? (
@@ -1360,7 +1412,7 @@ export const ThreeTapReportScreen = ({ onSuccess, onNavigateToMap, navigation })
                   ) : (
                     <>
                       <Feather name="crosshair" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                      <Text style={styles.locationBtnPrimaryText}>Use Current Location</Text>
+                      <Text style={styles.locationBtnPrimaryText}>Use Current GPS</Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -1391,7 +1443,7 @@ export const ThreeTapReportScreen = ({ onSuccess, onNavigateToMap, navigation })
                     onPick={handleMapPick}
                   />
                   <Text {...textProps} style={[styles.miniMapHint, getTextStyle('xs', { isHighContrast }), { color: palette.textMuted }]}>
-                    Tap map to place pin • Nudge to adjust • Photo location added automatically
+                    Tap map to place pin • Nudge to adjust • EXIF GPS extracted automatically
                   </Text>
                 </View>
               )}
@@ -1411,7 +1463,7 @@ export const ThreeTapReportScreen = ({ onSuccess, onNavigateToMap, navigation })
               })()}
               {!hasGps && !manualCoords && !deviceLocation && (
                 <Text {...textProps} style={[styles.locationFallbackHint, getTextStyle('xs', { isHighContrast }), { color: palette.textMuted }]}>
-                  No location yet — will use device location
+                  No GPS yet — will auto-fallback to device location
                 </Text>
               )}
             </View>

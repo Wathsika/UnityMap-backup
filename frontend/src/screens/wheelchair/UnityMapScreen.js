@@ -1486,6 +1486,29 @@ const UnityMapScreen = () => {
             >
               <Feather name="navigation" size={22} color={palette.primary} />
             </TouchableOpacity>
+
+            {/* Floating Audio-First FAB — Reopen launcher modal (only when enabled) */}
+            {isAudioLauncherEnabled && (
+              <TouchableOpacity
+                style={[
+                  tw`absolute right-5 bottom-20 w-13 h-13 rounded-full items-center justify-center shadow-lg z-20`,
+                  {
+                    backgroundColor: palette.surface,
+                    borderWidth: isHighContrast ? borderWidth : 1.5,
+                    borderColor: isHighContrast ? '#000000' : palette.primary,
+                  },
+                  isHighContrast && { shadowOpacity: 0, elevation: 0 },
+                ]}
+                onPress={() => setShowLauncher(true)}
+                activeOpacity={0.85}
+                accessible
+                accessibilityRole="button"
+                accessibilityLabel="Open Audio-First voice launcher"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Feather name="mic" size={22} color={palette.primary} />
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* ── Contextual Location Safety & Accessibility Bottom Sheet ── */}
