@@ -151,10 +151,10 @@ export const EXIFCaptureScreen = ({ onBack, onCaptured, preserveDraftOnBack = fa
         enriched.hasGps = true;
         enriched.isFallbackGps = true;
         fallbackUsed = true;
-        fallbackMsgText = 'EXIF GPS unavailable — using device location';
+        fallbackMsgText = 'Photo location unavailable — using device location';
       } else {
         // Still no GPS, but don't block — keep hasGps false, parent will use manualCoords fallback
-        fallbackMsgText = 'GPS unavailable — will use device location at submission';
+        fallbackMsgText = 'Location unavailable — will use device location at submission';
       }
     }
     // Timestamp fallback — always provide current time if missing
@@ -236,7 +236,7 @@ export const EXIFCaptureScreen = ({ onBack, onCaptured, preserveDraftOnBack = fa
       if (!isMountedRef.current) return;
       setExifResult(enriched);
       if (fallbackMsgText) setFallbackMsg(fallbackMsgText);
-      else setFallbackMsg('EXIF unavailable — using device location & current time');
+      else setFallbackMsg('Photo details unavailable — using device location & current time');
       await persistDraft(previewUrl, enriched, file);
     } finally {
       if (isMountedRef.current) {
@@ -553,7 +553,7 @@ export const EXIFCaptureScreen = ({ onBack, onCaptured, preserveDraftOnBack = fa
       >
         <View style={styles.headerRow}>
           <Text {...textProps} style={[styles.title, getTextStyle('lg', { isHighContrast }), { color: palette.textPrimary }]} accessibilityRole="header">
-            EXIF Metadata Capture
+            Take a Photo
           </Text>
           <TouchableOpacity
             onPress={handleCancel}
@@ -572,11 +572,11 @@ export const EXIFCaptureScreen = ({ onBack, onCaptured, preserveDraftOnBack = fa
           </TouchableOpacity>
         </View>
         <Text {...textProps} style={[styles.description, getTextStyle('sm', { isHighContrast }), { color: palette.textMuted }]}>
-          Extracts embedded GPS coordinates, camera orientation, and timestamp from photo EXIF metadata for verification.
+          A clear photo helps us verify and fix this barrier faster.
         </Text>
 
         {hasImage ? (
-          <View style={[styles.previewWrapper, { borderColor: palette.cardBorder, borderWidth, backgroundColor: palette.surfaceAlt }]} accessible accessibilityLabel="Captured barrier photo preview with viewfinder overlay">
+          <View style={[styles.previewWrapper, { borderColor: palette.cardBorder, borderWidth, backgroundColor: palette.surfaceAlt }]} accessible accessibilityLabel="Captured barrier photo preview">
             <Image source={{ uri: imageUri }} style={styles.previewImage} resizeMode="cover" accessible accessibilityLabel="Captured image" />
             <View pointerEvents="none" style={styles.viewfinderOverlay} accessible={false}>
               <View style={[styles.corner, styles.cornerTL, { borderColor: palette.focusRing, borderWidth: isHighContrast ? 3 : 2 }]} />
@@ -588,7 +588,7 @@ export const EXIFCaptureScreen = ({ onBack, onCaptured, preserveDraftOnBack = fa
             </View>
           </View>
         ) : (
-          <View style={[styles.placeholder, { borderColor: palette.border, borderWidth: isHighContrast ? borderWidth : 1, backgroundColor: palette.surfaceAlt }, !isHighContrast && { borderStyle: 'dashed' }]} accessible accessibilityLabel="Custom camera viewfinder — no image captured yet">
+          <View style={[styles.placeholder, { borderColor: palette.border, borderWidth: isHighContrast ? borderWidth : 1, backgroundColor: palette.surfaceAlt }, !isHighContrast && { borderStyle: 'dashed' }]} accessible accessibilityLabel="Camera — no photo yet">
             <View style={[styles.viewfinderFrame, { borderColor: palette.borderStrong, borderWidth: isHighContrast ? 2 : 1 }]}>
               <View style={[styles.corner, styles.cornerTL, { borderColor: palette.focusRing, borderWidth: isHighContrast ? 3 : 2 }]} />
               <View style={[styles.corner, styles.cornerTR, { borderColor: palette.focusRing, borderWidth: isHighContrast ? 3 : 2 }]} />
@@ -598,18 +598,18 @@ export const EXIFCaptureScreen = ({ onBack, onCaptured, preserveDraftOnBack = fa
               <View style={[styles.crosshairV, { backgroundColor: palette.focusRing, opacity: isHighContrast ? 1 : 0.35 }]} />
             </View>
             <Text {...textProps} style={[styles.placeholderText, getTextStyle('sm', { isHighContrast }), { color: palette.textMuted }]}>
-              No photo captured yet. Tap Capture or Pick from Gallery.
+              No photo yet. Tap Take Photo or Choose from Gallery.
             </Text>
             <Text {...textProps} style={[styles.viewfinderHint, getTextStyle('xs', { isHighContrast }), { color: palette.textMuted }]}>
-              Center barrier within viewfinder for best EXIF GPS capture
+              Keep the barrier in the center of the frame.
             </Text>
           </View>
         )}
 
         {exifLoading && hasImage && (
-          <View style={styles.loadingRow} accessible accessibilityLabel="Extracting EXIF metadata">
+          <View style={styles.loadingRow} accessible accessibilityLabel="Reading photo details">
             <ActivityIndicator color={palette.primary} />
-            <Text {...textProps} style={[styles.loadingText, getTextStyle('sm', { isHighContrast }), { color: palette.textSecondary }]}>Extracting GPS & timestamp...</Text>
+            <Text {...textProps} style={[styles.loadingText, getTextStyle('sm', { isHighContrast }), { color: palette.textSecondary }]}>Reading photo details...</Text>
           </View>
         )}
 
@@ -632,10 +632,10 @@ export const EXIFCaptureScreen = ({ onBack, onCaptured, preserveDraftOnBack = fa
           {!hasImage ? (
             <View style={styles.dualActions}>
               <View style={{ flex: 1 }}>
-                <Button title={isLoading ? 'Opening Camera...' : 'Capture Geotagged Image'} onPress={handleCapture} disabled={isLoading || exifLoading} accessibilityLabel="Capture geotagged image" />
+                <Button title={isLoading ? 'Opening Camera...' : 'Take Photo'} onPress={handleCapture} disabled={isLoading || exifLoading} accessibilityLabel="Take photo" />
               </View>
               <View style={{ flex: 1 }}>
-                <Button title="Pick from Gallery" onPress={handlePickFromGallery} disabled={isLoading || exifLoading} variant="secondary" accessibilityLabel="Pick image from gallery" accessibilityHint="Select existing image from device gallery, EXIF will be extracted if present" />
+                <Button title="Choose from Gallery" onPress={handlePickFromGallery} disabled={isLoading || exifLoading} variant="secondary" accessibilityLabel="Choose photo from gallery" accessibilityHint="Select an existing photo from your gallery" />
               </View>
             </View>
           ) : (
@@ -643,10 +643,10 @@ export const EXIFCaptureScreen = ({ onBack, onCaptured, preserveDraftOnBack = fa
               <Button title={isLoading ? 'Opening...' : 'Retake Photo'} onPress={handleRetake} disabled={isLoading || exifLoading} accessibilityLabel="Retake photo" />
               <View style={styles.dualActions}>
                 <View style={{ flex: 1 }}>
-                  <Button title="Capture New" onPress={handleCapture} disabled={isLoading || exifLoading} variant="secondary" accessibilityLabel="Capture new image" />
+                  <Button title="Take New Photo" onPress={handleCapture} disabled={isLoading || exifLoading} variant="secondary" accessibilityLabel="Take new photo" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Button title="Pick from Gallery" onPress={handlePickFromGallery} disabled={isLoading || exifLoading} variant="secondary" accessibilityLabel="Pick image from gallery" />
+                  <Button title="Choose from Gallery" onPress={handlePickFromGallery} disabled={isLoading || exifLoading} variant="secondary" accessibilityLabel="Choose photo from gallery" />
                 </View>
               </View>
             </>

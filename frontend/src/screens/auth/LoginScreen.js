@@ -51,10 +51,10 @@ const ERROR_RED     = '#DC2626';
 
 // ── Helper for border color ──────────────────────────────────────────────────
 const getBorderColor = (hasError, isFocused, touched, isValid, isHighContrast) => {
-  if (hasError) return isHighContrast ? '#000000' : ERROR_RED;
-  if (isFocused) return isHighContrast ? '#000000' : BRAND_GREEN;
-  if (touched && isValid) return isHighContrast ? '#000000' : BRAND_GREEN;
-  return '#E2E8F0';
+  if (hasError) return isHighContrast ? '#A84800' : ERROR_RED;
+  if (isFocused) return isHighContrast ? '#005A91' : BRAND_GREEN;
+  if (touched && isValid) return isHighContrast ? '#00795C' : BRAND_GREEN;
+  return isHighContrast ? '#000000' : '#E2E8F0';
 };
 
 // ── Standalone Field Component (Outside LoginScreen to preserve input focus across keystrokes) ──
@@ -71,18 +71,19 @@ const Field = React.memo(({
 
   return (
     <View style={styles.fieldGroup}>
-      <Text style={styles.fieldLabel}>{label}</Text>
+      <Text style={[styles.fieldLabel, isHighContrast && { color: '#000000' }]}>{label}</Text>
       <View style={[
         styles.inputBox,
         { borderColor: activeBorderColor },
         error && styles.inputBoxError,
+        error && isHighContrast && { backgroundColor: '#FFFFFF', borderWidth: 2 },
         isFocused && !error && styles.inputBoxFocused,
       ]}>
         {icon && (
           <Feather
             name={icon}
             size={17}
-            color={error ? ERROR_RED : isFocused ? BRAND_GREEN : '#64748B'}
+            color={error ? (isHighContrast ? '#A84800' : ERROR_RED) : isFocused ? BRAND_GREEN : '#64748B'}
             style={styles.inputIcon}
           />
         )}
@@ -90,10 +91,11 @@ const Field = React.memo(({
           style={[
             styles.textInput,
             multiline && { height: 80, textAlignVertical: 'top' },
+            isHighContrast && { color: '#000000' },
             Platform.OS === 'web' && { outlineStyle: 'none', outlineWidth: 0, boxShadow: 'none' },
           ]}
           placeholder={placeholder}
-          placeholderTextColor="#94A3B8"
+          placeholderTextColor={isHighContrast ? '#000000' : '#94A3B8'}
           value={value}
           onChangeText={onChangeText}
           onFocus={() => setIsFocused(true)}
@@ -120,17 +122,17 @@ const Field = React.memo(({
         )}
         {showIcon && isTouched && hasValue && !showToggle && (
           isValid
-            ? <Feather name="check-circle" size={16} color={BRAND_GREEN} />
-            : <Feather name="x-circle" size={16} color={ERROR_RED} />
+            ? <Feather name="check-circle" size={16} color={isHighContrast ? '#00795C' : BRAND_GREEN} />
+            : <Feather name="x-circle" size={16} color={isHighContrast ? '#A84800' : ERROR_RED} />
         )}
       </View>
       {error ? (
         <View style={styles.inlineErr}>
-          <Feather name="alert-circle" size={11} color={ERROR_RED} style={{ marginRight: 4 }} />
-          <Text style={styles.inlineErrText}>{error}</Text>
+          <Feather name="alert-circle" size={11} color={isHighContrast ? '#A84800' : ERROR_RED} style={{ marginRight: 4 }} />
+          <Text style={[styles.inlineErrText, isHighContrast && { color: '#A84800' }]}>{error}</Text>
         </View>
       ) : hint ? (
-        <Text style={styles.fieldHint}>{hint}</Text>
+        <Text style={[styles.fieldHint, isHighContrast && { color: '#000000' }]}>{hint}</Text>
       ) : null}
     </View>
   );
@@ -281,21 +283,21 @@ export const LoginScreen = () => {
             {/* Tab Switcher inside header */}
             <View style={styles.tabBar}>
               <TouchableOpacity
-                style={[styles.tabBtn, authMode === 'login' && styles.tabBtnActive]}
+                style={[styles.tabBtn, authMode === 'login' && styles.tabBtnActive, authMode === 'login' && isHighContrast && { borderWidth: 2, borderColor: '#000000' }]}
                 onPress={() => handleSwitchMode('login')}
                 activeOpacity={0.8}
                 accessibilityRole="tab"
               >
-                <Feather name="log-in" size={14} color={authMode === 'login' ? BRAND_DARK : 'rgba(255,255,255,0.7)'} style={{ marginRight: 5 }} />
+                <Feather name="log-in" size={14} color={authMode === 'login' ? BRAND_DARK : isHighContrast ? '#FFFFFF' : 'rgba(255,255,255,0.7)'} style={{ marginRight: 5 }} />
                 <Text style={[styles.tabBtnText, authMode === 'login' && styles.tabBtnTextActive]}>Sign In</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.tabBtn, authMode === 'register' && styles.tabBtnActive]}
+                style={[styles.tabBtn, authMode === 'register' && styles.tabBtnActive, authMode === 'register' && isHighContrast && { borderWidth: 2, borderColor: '#000000' }]}
                 onPress={() => handleSwitchMode('register')}
                 activeOpacity={0.8}
                 accessibilityRole="tab"
               >
-                <Feather name="user-plus" size={14} color={authMode === 'register' ? BRAND_DARK : 'rgba(255,255,255,0.7)'} style={{ marginRight: 5 }} />
+                <Feather name="user-plus" size={14} color={authMode === 'register' ? BRAND_DARK : isHighContrast ? '#FFFFFF' : 'rgba(255,255,255,0.7)'} style={{ marginRight: 5 }} />
                 <Text style={[styles.tabBtnText, authMode === 'register' && styles.tabBtnTextActive]}>Create Account</Text>
               </TouchableOpacity>
             </View>
@@ -314,14 +316,14 @@ export const LoginScreen = () => {
           {authMode === 'login' && (
             <View style={styles.loginBody}>
               {!!errorMessage && (
-                <View style={styles.errBanner}>
-                  <Feather name="alert-triangle" size={15} color={ERROR_RED} style={{ marginRight: 8 }} />
-                  <Text style={styles.errBannerText}>{errorMessage}</Text>
+                <View style={[styles.errBanner, isHighContrast && { backgroundColor: palette.errorBg, borderColor: palette.error, borderWidth: 2 }]}>
+                  <Feather name="alert-triangle" size={15} color={isHighContrast ? palette.error : ERROR_RED} style={{ marginRight: 8 }} />
+                  <Text style={[styles.errBannerText, isHighContrast && { color: palette.error }]}>{errorMessage}</Text>
                 </View>
               )}
               <View>
-                <Text style={styles.formHeading}>Welcome back</Text>
-                <Text style={styles.formSubheading}>Sign in to your UnityMap account</Text>
+                <Text style={[styles.formHeading, isHighContrast && { color: '#000000' }]}>Welcome back</Text>
+                <Text style={[styles.formSubheading, isHighContrast && { color: '#000000' }]}>Sign in to your UnityMap account</Text>
 
                 <Field
                   label="EMAIL ADDRESS *"
@@ -357,7 +359,7 @@ export const LoginScreen = () => {
 
                 {/* Sign In Button */}
                 <TouchableOpacity
-                  style={[styles.cta, isLoading && styles.ctaDisabled]}
+                  style={[styles.cta, isLoading && styles.ctaDisabled, isHighContrast && { backgroundColor: palette.primary, borderWidth: 2, borderColor: '#000000', shadowOpacity: 0, elevation: 0 }]}
                   onPress={handleLogin}
                   disabled={isLoading}
                   activeOpacity={0.88}
@@ -375,14 +377,14 @@ export const LoginScreen = () => {
 
                 {/* OR Divider */}
                 <View style={styles.dividerRow}>
-                  <View style={styles.dividerLine} />
-                  <Text style={styles.dividerText}>OR CONTINUE WITH</Text>
-                  <View style={styles.dividerLine} />
+                  <View style={[styles.dividerLine, isHighContrast && { backgroundColor: '#000000', height: 2 }]} />
+                  <Text style={[styles.dividerText, isHighContrast && { color: '#000000' }]}>OR CONTINUE WITH</Text>
+                  <View style={[styles.dividerLine, isHighContrast && { backgroundColor: '#000000', height: 2 }]} />
                 </View>
 
                 {/* Google Sign In Button */}
                 <TouchableOpacity
-                  style={[styles.googleBtn, (isLoading || isGoogleLoading) && styles.ctaDisabled]}
+                  style={[styles.googleBtn, (isLoading || isGoogleLoading) && styles.ctaDisabled, isHighContrast && { borderWidth: 2, borderColor: '#000000', shadowOpacity: 0, elevation: 0 }]}
                   onPress={handleGoogleAuth}
                   disabled={isLoading || isGoogleLoading}
                   activeOpacity={0.88}
@@ -393,16 +395,16 @@ export const LoginScreen = () => {
                   ) : (
                     <>
                       <GoogleLogo size={20} style={{ marginRight: 10 }} />
-                      <Text style={styles.googleBtnText}>Sign in with Google</Text>
+                      <Text style={[styles.googleBtnText, isHighContrast && { color: '#000000' }]}>Sign in with Google</Text>
                     </>
                   )}
                 </TouchableOpacity>
 
                 {/* Switch to Register */}
                 <View style={styles.switchRow}>
-                  <Text style={styles.switchText}>Don't have an account? </Text>
+                  <Text style={[styles.switchText, isHighContrast && { color: '#000000' }]}>Don't have an account? </Text>
                   <TouchableOpacity onPress={() => handleSwitchMode('register')} activeOpacity={0.7}>
-                    <Text style={styles.switchLink}>Create one</Text>
+                    <Text style={[styles.switchLink, isHighContrast && { color: palette.primary }]}>Create one</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -418,14 +420,14 @@ export const LoginScreen = () => {
               keyboardShouldPersistTaps="handled"
             >
               {!!errorMessage && (
-                <View style={styles.errBanner}>
-                  <Feather name="alert-triangle" size={15} color={ERROR_RED} style={{ marginRight: 8 }} />
-                  <Text style={styles.errBannerText}>{errorMessage}</Text>
+                <View style={[styles.errBanner, isHighContrast && { backgroundColor: palette.errorBg, borderColor: palette.error, borderWidth: 2 }]}>
+                  <Feather name="alert-triangle" size={15} color={isHighContrast ? palette.error : ERROR_RED} style={{ marginRight: 8 }} />
+                  <Text style={[styles.errBannerText, isHighContrast && { color: palette.error }]}>{errorMessage}</Text>
                 </View>
               )}
               <View>
-                <Text style={styles.formHeading}>Create your account</Text>
-                <Text style={styles.formSubheading}>Join UnityMap for accessible city navigation</Text>
+                <Text style={[styles.formHeading, isHighContrast && { color: '#000000' }]}>Create your account</Text>
+                <Text style={[styles.formSubheading, isHighContrast && { color: '#000000' }]}>Join UnityMap for accessible city navigation</Text>
 
                 {/* First & Last Name row */}
                 <View style={styles.nameRow}>
@@ -554,14 +556,14 @@ export const LoginScreen = () => {
                 {/* Passwords match indicator */}
                 {!confirmPasswordError && registerTouched.confirmPassword && confirmPassword && confirmPassword === registerPassword && (
                   <View style={styles.matchRow}>
-                    <Feather name="check-circle" size={12} color={BRAND_GREEN} style={{ marginRight: 4 }} />
-                    <Text style={styles.matchText}>Passwords match</Text>
+                    <Feather name="check-circle" size={12} color={isHighContrast ? '#00795C' : BRAND_GREEN} style={{ marginRight: 4 }} />
+                    <Text style={[styles.matchText, isHighContrast && { color: '#00795C' }]}>Passwords match</Text>
                   </View>
                 )}
 
                 {/* Create Account Button */}
                 <TouchableOpacity
-                  style={[styles.cta, isLoading && styles.ctaDisabled]}
+                  style={[styles.cta, isLoading && styles.ctaDisabled, isHighContrast && { backgroundColor: palette.primary, borderWidth: 2, borderColor: '#000000', shadowOpacity: 0, elevation: 0 }]}
                   onPress={handleRegister}
                   disabled={isLoading}
                   activeOpacity={0.88}
@@ -579,14 +581,14 @@ export const LoginScreen = () => {
 
                 {/* OR Divider */}
                 <View style={styles.dividerRow}>
-                  <View style={styles.dividerLine} />
-                  <Text style={styles.dividerText}>OR CONTINUE WITH</Text>
-                  <View style={styles.dividerLine} />
+                  <View style={[styles.dividerLine, isHighContrast && { backgroundColor: '#000000', height: 2 }]} />
+                  <Text style={[styles.dividerText, isHighContrast && { color: '#000000' }]}>OR CONTINUE WITH</Text>
+                  <View style={[styles.dividerLine, isHighContrast && { backgroundColor: '#000000', height: 2 }]} />
                 </View>
 
                 {/* Google Sign Up Button */}
                 <TouchableOpacity
-                  style={[styles.googleBtn, (isLoading || isGoogleLoading) && styles.ctaDisabled]}
+                  style={[styles.googleBtn, (isLoading || isGoogleLoading) && styles.ctaDisabled, isHighContrast && { borderWidth: 2, borderColor: '#000000', shadowOpacity: 0, elevation: 0 }]}
                   onPress={handleGoogleAuth}
                   disabled={isLoading || isGoogleLoading}
                   activeOpacity={0.88}
@@ -597,16 +599,16 @@ export const LoginScreen = () => {
                   ) : (
                     <>
                       <GoogleLogo size={20} style={{ marginRight: 10 }} />
-                      <Text style={styles.googleBtnText}>Sign up with Google</Text>
+                      <Text style={[styles.googleBtnText, isHighContrast && { color: '#000000' }]}>Sign up with Google</Text>
                     </>
                   )}
                 </TouchableOpacity>
 
                 {/* Switch to Login */}
                 <View style={styles.switchRow}>
-                  <Text style={styles.switchText}>Already have an account? </Text>
+                  <Text style={[styles.switchText, isHighContrast && { color: '#000000' }]}>Already have an account? </Text>
                   <TouchableOpacity onPress={() => handleSwitchMode('login')} activeOpacity={0.7}>
-                    <Text style={styles.switchLink}>Sign In</Text>
+                    <Text style={[styles.switchLink, isHighContrast && { color: palette.primary }]}>Sign In</Text>
                   </TouchableOpacity>
                 </View>
               </View>

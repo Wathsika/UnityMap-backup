@@ -130,13 +130,27 @@ export const SpokenGuidanceHazardWarningScreen = ({
   };
 
   const hazardBg = isHighContrast
-    ? '#000000'
+    ? level === 'hazard'
+      ? palette.errorBg
+      : level === 'caution'
+      ? palette.warningBg
+      : palette.successBg
     : level === 'hazard'
     ? '#FEE2E2'
     : level === 'caution'
     ? '#FEF3C7'
     : '#DCFCE7';
-  const hazardColor = isHighContrast ? '#FFFFFF' : level === 'hazard' ? '#DC2626' : level === 'caution' ? '#B45309' : '#065F46';
+  const hazardColor = isHighContrast
+    ? level === 'hazard'
+      ? palette.error
+      : level === 'caution'
+      ? palette.warning
+      : palette.success
+    : level === 'hazard'
+    ? '#DC2626'
+    : level === 'caution'
+    ? '#B45309'
+    : '#065F46';
 
   return (
     <View style={[styles.container, { backgroundColor: palette.background }]}>
@@ -161,7 +175,7 @@ export const SpokenGuidanceHazardWarningScreen = ({
                   style={[
                     styles.bar,
                     {
-                      backgroundColor: isHighContrast ? '#000000' : palette.primary,
+                      backgroundColor: palette.primary,
                       height: anim,
                       opacity: isListening || isSpeaking ? 1 : 0.35,
                     },
@@ -236,7 +250,7 @@ export const SpokenGuidanceHazardWarningScreen = ({
           accessibilityLabel={`${level} hazard warning`}
           style={[
             styles.hazardOverlay,
-            { backgroundColor: hazardBg, borderColor: isHighContrast ? '#FFFFFF' : 'transparent', borderWidth: isHighContrast ? 2 : 0 },
+            { backgroundColor: hazardBg, borderColor: isHighContrast ? hazardColor : 'transparent', borderWidth: isHighContrast ? 3 : 0 },
           ]}
         >
           <View style={styles.hazardContent}>

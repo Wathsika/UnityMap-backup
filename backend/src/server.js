@@ -103,7 +103,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-const initialPort = parseInt(process.env.PORT, 10) || 5001;
+const initialPort = parseInt(process.env.PORT, 10) || 5000;
 
 /**
  * LAN IP for the startup hint printed below. Prefers the OS default-route source
@@ -158,7 +158,9 @@ const printLanHint = (port) => {
 };
 
 const startServer = (port, bumped = false) => {
-  const server = app.listen(port, () => {
+  // Bind 0.0.0.0 so the Android emulator (10.0.2.2) and physical devices
+  // (PC LAN IP) can reach the API.
+  const server = app.listen(port, '0.0.0.0', () => {
     console.log(`🚀 UnityMap Backend Server listening on port ${port}`);
     console.log(`📡 Health Check URL: http://localhost:${port}/api/health`);
     console.log(`📡 API Base URL:     http://localhost:${port}/api`);

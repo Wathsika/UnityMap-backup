@@ -224,7 +224,7 @@ export const WheelchairRoutingScreen = () => {
             <MaterialCommunityIcons
               name="wheelchair-accessibility"
               size={22}
-              color="#4ADE80"
+              color={isHighContrast ? '#FFFFFF' : '#4ADE80'}
             />
           </View>
           <View style={styles.headerTextGroup}>
@@ -256,7 +256,7 @@ export const WheelchairRoutingScreen = () => {
               {originName}
             </Text>
           </View>
-          <MaterialIcons name="arrow-forward" size={14} color="#9E9E9E" />
+          <MaterialIcons name="arrow-forward" size={14} color={isHighContrast ? '#FFFFFF' : '#9E9E9E'} />
           <View style={styles.endpointItem}>
             <View style={[styles.dotEnd, isHighContrast && { backgroundColor: '#FFFFFF' }]} />
             <Text
@@ -321,31 +321,31 @@ export const WheelchairRoutingScreen = () => {
             <Text style={[styles.sectionTitle, isHighContrast && { color: '#FFFFFF' }]}>
               Available Routes ({routes.length})
             </Text>
-            <Text style={styles.sectionSub}>
+            <Text style={[styles.sectionSub, isHighContrast && { color: '#FFFFFF' }]}>
               Paced at wheelchair speed (1.1 m/s) • Tap a card to preview on map
             </Text>
           </View>
 
-          <View style={styles.liveBadge}>
-            <View style={styles.livePulse} />
-            <Text style={styles.liveText}>Real-Time Lifts</Text>
+          <View style={[styles.liveBadge, isHighContrast && { backgroundColor: '#000000', borderColor: '#FFFFFF', borderWidth: 2 }]}>
+            <View style={[styles.livePulse, isHighContrast && { backgroundColor: '#FFFFFF' }]} />
+            <Text style={[styles.liveText, isHighContrast && { color: '#FFFFFF' }]}>Real-Time Lifts</Text>
           </View>
         </View>
 
         {/* Loading Indicator */}
         {loading && (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#2E8B57" />
-            <Text style={styles.loadingText}>Calculating step-free routes & slopes...</Text>
+            <ActivityIndicator size="large" color={isHighContrast ? '#FFFFFF' : '#2E8B57'} />
+            <Text style={[styles.loadingText, isHighContrast && { color: '#FFFFFF' }]}>Calculating step-free routes & slopes...</Text>
           </View>
         )}
 
         {!loading && errorMessage ? (
-          <View style={tw`mt-2 rounded-xl border border-red-700 bg-red-950 p-4`}>
-            <Text style={tw`mb-1 text-sm font-bold text-red-300`}>
+          <View style={[tw`mt-2 rounded-xl border border-red-700 bg-red-950 p-4`, isHighContrast && { backgroundColor: '#FFFFFF', borderColor: '#A84800', borderWidth: 2 }]}>
+            <Text style={[tw`mb-1 text-sm font-bold text-red-300`, isHighContrast && { color: '#A84800' }]}>
               Route data unavailable
             </Text>
-            <Text style={tw`text-xs leading-5 text-red-200`}>{errorMessage}</Text>
+            <Text style={[tw`text-xs leading-5 text-red-200`, isHighContrast && { color: '#A84800' }]}>{errorMessage}</Text>
           </View>
         ) : null}
 

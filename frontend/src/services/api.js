@@ -270,8 +270,9 @@ const inflightGets = new Map();
 export const apiRequest = async (endpoint, options = {}) => {
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   // Per-call timeout override (ms). Image uploads need far longer than plain GETs:
-  // aborting a healthy multipart POST at 20s both fails the submit AND mislabels it
-  // as "offline". Background GETs default to 20000ms (≥15000ms requirement).
+  // aborting a healthy multipart POST early both fails the submit AND mislabels it
+  // as "offline". Default 12000ms: long enough for LAN/wifi round-trips, short
+  // enough that a dead host (stale IP) fails fast instead of hanging the UI.
   // Never forward timeoutMs to fetch itself.
   // noFallback (opt-in): typeahead-style calls fail fast on the primary host
   // instead of walking fallback ports/hosts (~45s of spinner). Never forwarded.
@@ -428,9 +429,13 @@ export const apiRequest = async (endpoint, options = {}) => {
     primaryBase = verified;
   }
 
-  // Try primary configured port
+  // Try primary configured port — log the ACTUAL url attempted (never a hardcoded
+  // port label: with an EXPO_PUBLIC_API_URL override the port arg is ignored).
+  const primaryUrl = primaryBase;
+  const fallbackUrl = getBaseUrl(FALLBACK_PORT);
+  const attemptedUrls = [primaryUrl];
   try {
-    return await tryFetch(primaryBase);
+    return await tryFetch(primaryUrl);
   } catch (primaryErr) {
     // Fast-fail callers (typeahead search) never walk the fallback chain —
     // they render local results instead of spinning through dead hosts.
@@ -442,25 +447,38 @@ export const apiRequest = async (endpoint, options = {}) => {
     if (!isRetryableNetworkError(primaryErr)) throw primaryErr;
     if (shouldLogWarn) {
       console.warn(
-        `[API Warning] Endpoint ${cleanEndpoint} unreachable on port ${PRIMARY_PORT} (${primaryErr.message}). Retrying fallback...`
+        `[API Warning] Endpoint ${cleanEndpoint} unreachable at ${primaryUrl} (message=${primaryErr?.message} code=${primaryErr?.code || 'n/a'} status=${primaryErr?.status ?? 'n/a'}). Retrying fallback...`
       );
     }
 
-    // Try fallback port (5001) — same host, full timeout (covers backend port-shift)
+    // Try fallback port (5001) — same host (covers backend port-shift).
+    // Skipped when it resolves to the same URL as primary (e.g. an
+    // EXPO_PUBLIC_API_URL override ignores the port argument) — retrying the
+    // identical URL would just double the wait and the confusing logs.
+    if (fallbackUrl !== primaryUrl) {
+      attemptedUrls.push(fallbackUrl);
+    } else if (shouldLogWarn) {
+      console.warn(`[API] Fallback skipped for ${cleanEndpoint} (same URL as primary: ${primaryUrl})`);
+    }
+    if (fallbackUrl !== primaryUrl) {
     try {
-      return await tryFetch(getBaseUrl(FALLBACK_PORT));
+      return await tryFetch(fallbackUrl);
     } catch (fallbackErr) {
       // An auth verdict is port-independent — never replay credentials elsewhere.
       if (fallbackErr instanceof ApiError && (fallbackErr.status === 401 || fallbackErr.status === 403)) {
         throw fallbackErr;
       }
+      // Any other fallback failure falls through to the speculative hosts below.
+    }
+    }
 
       // Speculative emulator hosts get a short timeout and are skipped when they
       // duplicate a URL already attempted — they must fail fast, not hang per host.
-      const tried = new Set([primaryBase, getBaseUrl(PRIMARY_PORT), getBaseUrl(FALLBACK_PORT)]);
+      const tried = new Set(attemptedUrls);
       const trySpeculative = async (baseUrl) => {
         if (tried.has(baseUrl)) return null;
         tried.add(baseUrl);
+        attemptedUrls.push(baseUrl);
         return tryFetch(baseUrl, Math.min(timeout, 8000));
       };
       if (Platform.OS !== 'web') {
@@ -480,11 +498,19 @@ export const apiRequest = async (endpoint, options = {}) => {
       if (shouldLogWarn) {
         console.error(
           `[API Error] All connection attempts failed for ${cleanEndpoint}:`,
-          primaryErr.message
+          {
+            message: primaryErr?.message,
+            code: primaryErr?.code,
+            status: primaryErr?.status,
+            detail: primaryErr?.detail,
+            backendError: primaryErr?.backendError,
+            triedPrimary: primaryUrl,
+            triedFallback: fallbackUrl === primaryUrl ? '(skipped, same as primary)' : fallbackUrl,
+            attemptedUrls,
+          }
         );
       }
       throw primaryErr;
-    }
   }
   };
 

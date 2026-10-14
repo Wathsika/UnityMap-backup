@@ -21,7 +21,7 @@ const STREAMS = [
   { id: 'voice_nav', title: 'Voice Navigation', component: VoiceNavigationScreen },
   { id: 'tts_interface', title: 'TTS Interfaces', component: TTSInterfaceScreen },
   { id: 'volunteer_report', title: '3-Tap Report', component: ThreeTapReportScreen },
-  { id: 'exif_capture', title: 'EXIF Capture', component: EXIFCaptureScreen },
+  { id: 'exif_capture', title: 'Take a Photo', component: EXIFCaptureScreen },
 ];
 
 const TAB_ICONS = {
