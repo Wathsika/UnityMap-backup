@@ -56,6 +56,8 @@ import {
   categorizeProximityFeatures,
 } from '../../utils/mapMath';
 import { searchExternalPlaces, searchLocalPlaces, getLocalPlaceById, wheelchairChip } from '../../services/placeSearchService';
+import { rankPlaces, rankPlacesForTranscripts, chooseBestMatch } from '../../utils/placeMatcher';
+import { SRI_LANKA_GAZETTEER, GAZETTEER_NAMES } from '../../data/sriLankaGazetteer';
 
 /**
  * UnityMapScreen.js — Accessible Map & Real-time Live MongoDB Explorer
@@ -100,6 +102,9 @@ const UnityMapScreen = () => {
   const [voiceTranscript, setVoiceTranscript] = useState('');
   const [voiceConfidence, setVoiceConfidence] = useState(0);
   const [voiceRouteSummary, setVoiceRouteSummary] = useState(null);
+  // "Did you mean…" candidates — only set when the spoken place is ambiguous
+  const [voiceMatches, setVoiceMatches] = useState(null);
+  const [voiceSelectedMatchId, setVoiceSelectedMatchId] = useState(null);
   const [showGuidance, setShowGuidance] = useState(false);
   const [tappedLocation, setTappedLocation] = useState(null);
   const [tapRoute, setTapRoute] = useState(null);
@@ -127,9 +132,13 @@ const UnityMapScreen = () => {
   const externalCacheRef = React.useRef(new Map());
   const externalRequestIdRef = React.useRef(0);
 
-  const { palette, borderWidth, isHighContrast, isReduceMotionEnabled, isAudioLauncherEnabled } = useTheme();
+  const { palette, borderWidth, isHighContrast, isReduceMotionEnabled, isAudioLauncherEnabled, preferredSTTLocale } = useTheme();
   const { speak } = useSpeech();
   const { location, loading: locationLoading, recenter } = useLocation();
+
+  // Best/selected voice destination — survives modal re-renders (not state, so
+  // confirm never races an async setState).
+  const voiceDestinationRef = React.useRef(null);
 
   // Only show launcher if enabled in Settings (not for every user)
   useEffect(() => {
@@ -345,10 +354,17 @@ const UnityMapScreen = () => {
   }, []);
 
   // ── Tap-to-Route & Proximity Safety Analysis handler ───────────────────────
-  const handleMapTap = useCallback(async (loc) => {
+  // options.exact: destination came from a resolved place (search / voice /
+  // gazetteer) with authoritative coordinates + name — the pin must land on
+  // the actual place, never snap to a nearby campus node ("main entrance" bug).
+  const handleMapTap = useCallback(async (loc, options = {}) => {
     if (!Number.isFinite(Number(loc?.latitude)) || !Number.isFinite(Number(loc?.longitude))) {
       return;
     }
+    const exact = options.exact === true;
+    const requestedDestName = typeof options.destinationName === 'string' && options.destinationName.trim()
+      ? options.destinationName.trim()
+      : null;
 
     const destination = {
       latitude: Number(loc.latitude),
@@ -378,14 +394,16 @@ const UnityMapScreen = () => {
       const [roadRouteRes, originNode, destNode] = await Promise.all([
         getRoadRoute(origin.longitude, origin.latitude, destination.longitude, destination.latitude).catch(() => null),
         getNearestNode(origin.longitude, origin.latitude, 500).catch(() => null),
-        getNearestNode(destination.longitude, destination.latitude, 500).catch(() => null),
+        // Exact places: only accept a campus node essentially AT the place
+        // (100 m); raw map taps keep the loose 500 m campus snap.
+        getNearestNode(destination.longitude, destination.latitude, exact ? 100 : 500).catch(() => null),
       ]);
 
       let polyCoords = [];
       let totalMeters = directMeters;
       let maxRouteSlope = 0;
       let routePathways = [];
-      const destName = destNode?.name || 'Selected Location';
+      const destName = requestedDestName || destNode?.name || 'Selected Location';
 
       let foundDbRoute = false;
       if (originNode && destNode && (originNode._id ?? originNode.id) !== (destNode._id ?? destNode.id)) {
@@ -449,6 +467,17 @@ const UnityMapScreen = () => {
           [destination.latitude, destination.longitude],
         ];
         totalMeters = directMeters;
+      }
+
+      // Exact place: the destination pin is drawn at the route's LAST point
+      // (BaseMap), so snap that point onto the resolved place's true coords —
+      // a campus node 100 m away must not shift the pin/label.
+      if (exact && polyCoords.length >= 2) {
+        const last = polyCoords[polyCoords.length - 1];
+        if (last[0] !== destination.latitude || last[1] !== destination.longitude) {
+          polyCoords = [...polyCoords];
+          polyCoords[polyCoords.length - 1] = [destination.latitude, destination.longitude];
+        }
       }
 
       const etaMins = calculateWheelchairETA(totalMeters, maxRouteSlope);
@@ -527,7 +556,7 @@ const UnityMapScreen = () => {
           coordinates: polyCoords,
           color: '#10B981',
           isSelected: true,
-          destName: 'Selected Destination',
+          destName: requestedDestName || 'Selected Destination',
         });
       }
 
@@ -536,7 +565,7 @@ const UnityMapScreen = () => {
       setTapRouteMeta({
         distanceText: formatDistance(directMeters),
         etaText: formatDuration(etaMins),
-        destName: 'Selected Destination',
+        destName: requestedDestName || 'Selected Destination',
         safetyStatus: status,
       });
       setIsTapSummarySheetVisible(true);
@@ -631,9 +660,15 @@ const UnityMapScreen = () => {
             ? [(Number(bb.south) + Number(bb.north)) / 2, (Number(bb.west) + Number(bb.east)) / 2]
             : [target.lat, target.lng];
         setMapCenter(center);
-        // Reuse current map pipeline to draw route and show summary
+        // Reuse current map pipeline to draw route and show summary.
+        // Resolved places (external/local/gazetteer) pin to their TRUE coords;
+        // campus nodes keep the loose tap-to-route snapping.
+        const isResolvedPlace = ['external', 'local', 'gazetteer'].includes(target.source);
         try {
-          await handleMapTap({ latitude: target.lat, longitude: target.lng });
+          await handleMapTap(
+            { latitude: target.lat, longitude: target.lng },
+            { exact: isResolvedPlace, destinationName: target.title }
+          );
         } catch (_) {}
         if (target.source === 'external' || target.source === 'local') {
           // Route preview (safety sheet) waits for Directions — detail card first.
@@ -652,7 +687,7 @@ const UnityMapScreen = () => {
     [handleMapTap]
   );
 
-  // Typed search fallback: Enter → local DB top hit first, then fuzzy DB nodes.
+  // Typed search fallback: Enter → local DB top hit first, then fuzzy rank.
   const handleSearchSubmit = useCallback(async () => {
     const q = searchQuery.trim();
     if (!q) return;
@@ -661,29 +696,162 @@ const UnityMapScreen = () => {
       await handleSelectDestination(localResults[0]);
       return;
     }
-    const all = [...dbNodes, ...recentDestinations];
-    let best = null;
-    let bestScore = -1;
-    const lowerQ = q.toLowerCase();
-    for (const dest of all) {
-      const titleLower = dest.title.toLowerCase();
-      let score = 0;
-      if (titleLower === lowerQ) score = 3;
-      else if (titleLower.includes(lowerQ) || lowerQ.includes(titleLower)) score = 2;
-      else if (titleLower.split(' ').some((w) => lowerQ.includes(w) || w.includes(lowerQ))) score = 1;
-      if (score > bestScore) {
-        bestScore = score;
-        best = dest;
-      }
-    }
-    if (best && bestScore >= 1) {
-      await handleSelectDestination(best);
+    const ranked = rankPlaces(q, [...dbNodes, ...recentDestinations]);
+    if (ranked.length > 0) {
+      await handleSelectDestination(ranked[0]);
     }
   }, [searchQuery, dbNodes, recentDestinations, localResults, handleSelectDestination]);
 
+  // Build the voice route summary for a resolved destination.
+  // Campus destinations use the DB route (backend spokenSummary); far places
+  // fall back to the OSRM road route with a locally composed spoken summary.
+  const buildVoiceSummary = useCallback(
+    async (dest, confidence, spokenFallbackName) => {
+      const origin =
+        currentLocation ||
+        (location?.latitude && location?.longitude ? location : null) ||
+        (dbNodes[0]?.lat ? { latitude: dbNodes[0].lat, longitude: dbNodes[0].lng } : { latitude: mapCenter[0], longitude: mapCenter[1] });
+      const heardName = spokenFallbackName || voiceTranscript || 'that destination';
+      const fallbackName = dest?.title || heardName;
+
+      if (!dest || !Number.isFinite(Number(dest.lat)) || !Number.isFinite(Number(dest.lng))) {
+        return {
+          destName: fallbackName,
+          distanceText: '--',
+          crossings: 0,
+          etaText: '--',
+          hazardCount: nearbyHazards?.length ?? 0,
+          spokenSummary: `No matching place found for ${heardName}. Tap the mic to say it again.`,
+          confidence,
+        };
+      }
+
+      const isResolvedPlace = ['external', 'local', 'gazetteer'].includes(dest.source);
+      let summary = {
+        destName: fallbackName,
+        distanceText: '--',
+        crossings: 0,
+        etaText: '--',
+        hazardCount: nearbyHazards?.length ?? 0,
+        spokenSummary: `Route to ${fallbackName}: calculating...`,
+        confidence,
+      };
+
+      try {
+        const [originNode, destNode] = await Promise.all([
+          getNearestNode(origin.longitude, origin.latitude, 500).catch(() => null),
+          // Exact places only accept a node essentially at the place (100 m).
+          getNearestNode(dest.lng, dest.lat, isResolvedPlace ? 100 : 500).catch(() => null),
+        ]);
+        if (originNode && destNode && (originNode._id ?? originNode.id) !== (destNode._id ?? destNode.id)) {
+          const routeRes = await getRoute(originNode._id || originNode.id, destNode._id || destNode.id, isWheelchairAccessible, {
+            includeSpeech: true,
+            locale: preferredSTTLocale || 'en',
+          });
+          if (routeRes?.success) {
+            const d = routeRes.data;
+            summary = {
+              destName: d.destinationNode?.name || dest.title,
+              distanceText: d.totalDistanceMeters ? formatDistance(d.totalDistanceMeters) : '--',
+              crossings: d.crossings ?? 0,
+              etaText: d.estimatedDurationSec ? formatDuration(Math.ceil(d.estimatedDurationSec / 60)) : '--',
+              hazardCount: d.hazardCount ?? nearbyHazards?.length ?? 0,
+              spokenSummary:
+                d.spokenSummary ||
+                `Route to ${d.destinationNode?.name || dest.title}: ${d.totalDistanceMeters ? formatDistance(d.totalDistanceMeters) : '--'}, ${d.crossings ?? 0} crossings.`,
+              confidence,
+            };
+          }
+        }
+
+        // No campus route (far place / nodes unreachable) → road-route summary.
+        if (summary.spokenSummary.includes('calculating')) {
+          const road = await getRoadRoute(origin.longitude, origin.latitude, dest.lng, dest.lat).catch(() => null);
+          if (road && Number(road.distanceMeters) > 0) {
+            const distanceText = formatDistance(road.distanceMeters);
+            const etaText = formatDuration(calculateWheelchairETA(road.distanceMeters, 0));
+            summary = {
+              destName: dest.title,
+              distanceText,
+              crossings: 0,
+              etaText,
+              hazardCount: nearbyHazards?.length ?? 0,
+              spokenSummary: `Route to ${dest.title}: ${distanceText}, ${etaText}.`,
+              confidence,
+            };
+          }
+        }
+      } catch (_) {}
+
+      return summary;
+    },
+    [currentLocation, location, dbNodes, mapCenter, voiceTranscript, isWheelchairAccessible, nearbyHazards, preferredSTTLocale]
+  );
+
+  // Resolve a spoken transcript to a destination: merge live search (local 5k +
+  // Nominatim), gazetteer, campus nodes and recents; rank the transcript AND
+  // its STT alternatives; confident → straight to summary, ambiguous →
+  // "Did you mean…" list (per SPT UX: auto-pick, list only when unsure).
+  const resolveVoiceDestination = useCallback(
+    async (q, confidence, sttAlternatives) => {
+      const texts = [
+        q,
+        ...(Array.isArray(sttAlternatives) ? sttAlternatives : [])
+          .map((a) => (typeof a === 'string' ? a : a?.transcript))
+          .map((t) => String(t || '').trim())
+          .filter((t) => t && t.toLowerCase() !== q.toLowerCase()),
+      ];
+
+      let liveResults = [];
+      try {
+        const origin =
+          currentLocation ||
+          (location?.latitude && location?.longitude ? location : null) ||
+          (dbNodes[0]?.lat ? { latitude: dbNodes[0].lat, longitude: dbNodes[0].lng } : { latitude: mapCenter[0], longitude: mapCenter[1] });
+        const [localRes, extRes] = await Promise.all([
+          searchLocalPlaces(q, origin, { limit: 10 }).catch(() => []),
+          searchExternalPlaces(q, origin, { limit: 8 }).catch(() => []),
+        ]);
+        liveResults = [...localRes, ...extRes];
+      } catch (_) {}
+
+      const gazetteerResults = SRI_LANKA_GAZETTEER.map((p) => ({
+        id: `gz_${p.name}`,
+        title: p.name,
+        desc: p.city ? `${p.city}, Sri Lanka` : 'Sri Lanka',
+        addressShort: p.city ? `${p.city}, Sri Lanka` : 'Sri Lanka',
+        aliases: p.aliases,
+        city: p.city,
+        lat: p.lat,
+        lng: p.lng,
+        source: 'gazetteer',
+        categoryLabel: p.category,
+        distance: '--',
+      }));
+
+      const candidates = [...liveResults, ...gazetteerResults, ...dbNodes, ...recentDestinations];
+      const ranked = rankPlacesForTranscripts(texts, candidates);
+      const pick = chooseBestMatch(ranked);
+
+      let matches = pick.needsConfirmation ? pick.alternatives.slice(0, 5) : null;
+      let best = pick.best;
+      // Nothing confident but live results exist → offer them as candidates.
+      if (!best && !matches && liveResults.length > 0) {
+        best = null;
+        matches = liveResults.slice(0, 5);
+      }
+
+      voiceDestinationRef.current = best || (matches && matches[0]) || null;
+
+      const summary = await buildVoiceSummary(voiceDestinationRef.current, confidence, q);
+      return { summary, matches, selectedMatchId: matches ? (best ? best.id || best.placeId : matches[0]?.id || matches[0]?.placeId) : null };
+    },
+    [currentLocation, location, dbNodes, mapCenter, recentDestinations, buildVoiceSummary]
+  );
+
   // SPT-106: bridge spoken transcript to Voice Input & Summary Readout Screen — summary first via getRoute includeSpeech, draw on Confirm
   const handleLauncherNavigate = useCallback(
-    async (transcript, confidence) => {
+    async (transcript, confidence, sttAlternatives) => {
       setShowLauncher(false);
       const q = typeof transcript === 'string' ? transcript.trim() : '';
       if (!q) return;
@@ -691,114 +859,86 @@ const UnityMapScreen = () => {
       setVoiceConfidence(confidence || 0);
       setSearchQuery(q);
       setIsSearchExpanded(true);
+      setVoiceMatches(null);
+      setVoiceSelectedMatchId(null);
 
-      const all = [...dbNodes, ...recentDestinations];
-      let best = null;
-      let bestScore = -1;
-      const lowerQ = q.toLowerCase();
-      for (const dest of all) {
-        const titleLower = dest.title.toLowerCase();
-        let score = 0;
-        if (titleLower === lowerQ) score = 3;
-        else if (titleLower.includes(lowerQ) || lowerQ.includes(titleLower)) score = 2;
-        else if (titleLower.split(' ').some((w) => lowerQ.includes(w) || w.includes(lowerQ))) score = 1;
-        if (score > bestScore) {
-          bestScore = score;
-          best = dest;
-        }
+      const { summary, matches, selectedMatchId } = await resolveVoiceDestination(q, confidence, sttAlternatives);
+      if (matches) {
+        setVoiceMatches(matches);
+        setVoiceSelectedMatchId(selectedMatchId);
       }
-
-      // Fetch real route preview for summary (reuse current BaseMap pipeline, no draw yet)
-      let summary = {
-        destName: best?.title || q,
-        distanceText: '--',
-        crossings: 0,
-        etaText: '--',
-        hazardCount: nearbyHazards?.length ?? 0,
-        spokenSummary: `Route to ${best?.title || q}: calculating...`,
-        confidence,
-        pendingBest: best,
-      };
-
-      if (best?.lat && best?.lng) {
-        try {
-          const origin = currentLocation || (location?.latitude && location?.longitude ? location : null) || (dbNodes[0]?.lat ? { latitude: dbNodes[0].lat, longitude: dbNodes[0].lng } : { latitude: mapCenter[0], longitude: mapCenter[1] });
-          const originNode = await getNearestNode(origin.longitude, origin.latitude, 500).catch(() => null);
-          const destNode = await getNearestNode(best.lng, best.lat, 500).catch(() => null);
-          if (originNode && destNode) {
-            const routeRes = await getRoute(originNode._id || originNode.id, destNode._id || destNode.id, isWheelchairAccessible, { includeSpeech: true, locale: 'en' });
-            if (routeRes?.success) {
-              const d = routeRes.data;
-              summary = {
-                destName: d.destinationNode?.name || best.title,
-                distanceText: d.totalDistanceMeters ? formatDistance(d.totalDistanceMeters) : '--',
-                crossings: d.crossings ?? 0,
-                etaText: d.estimatedDurationSec ? formatDuration(Math.ceil(d.estimatedDurationSec / 60)) : '--',
-                hazardCount: d.hazardCount ?? nearbyHazards?.length ?? 0,
-                spokenSummary: d.spokenSummary || `Route to ${d.destinationNode?.name || best.title}: ${d.totalDistanceMeters ? formatDistance(d.totalDistanceMeters) : '--'}, ${d.crossings ?? 0} crossings.`,
-                confidence,
-                pendingOrigin: origin,
-                pendingDest: best,
-                pendingRouteRes: d,
-              };
-            }
-          }
-        } catch (_) {}
-      }
-
-      // Fallback if no backend route yet
-      if (!summary.spokenSummary || summary.spokenSummary.includes('calculating')) {
-        const distanceText = tapRouteMeta?.distanceText || 'Calculating...';
-        const etaText = tapRouteMeta?.etaText || '--';
-        const crossings = tapRouteMeta ? 0 : bestScore >= 0 ? bestScore : 0;
-        summary = {
-          destName: best?.title || q,
-          distanceText,
-          crossings,
-          etaText,
-          hazardCount: nearbyHazards?.length ?? 0,
-          spokenSummary: `Route to ${best?.title || q}: ${distanceText}, ${crossings} crossings, ${etaText}, ${nearbyHazards?.length ?? 0} hazards.`,
-          confidence,
-          pendingBest: best,
-        };
-      }
-
       setVoiceRouteSummary(summary);
       setShowVoiceSummary(true);
       try {
         speak(summary.spokenSummary);
       } catch (_) {}
     },
-    [dbNodes, recentDestinations, tapRouteMeta, nearbyHazards, currentLocation, location, mapCenter, isWheelchairAccessible, speak]
+    [resolveVoiceDestination, speak]
+  );
+
+  // User tapped a "Did you mean…" candidate → re-select + rebuild the summary.
+  const handleVoiceMatchSelect = useCallback(
+    async (dest) => {
+      if (!dest) return;
+      voiceDestinationRef.current = dest;
+      setVoiceSelectedMatchId(dest.id || dest.placeId || dest.title);
+      const summary = await buildVoiceSummary(dest, voiceConfidence);
+      setVoiceRouteSummary(summary);
+      try {
+        speak(summary.spokenSummary);
+      } catch (_) {}
+    },
+    [buildVoiceSummary, voiceConfidence, speak]
+  );
+
+  // Re-recording inside the voice screen → re-resolve with the new phrase.
+  const handleVoiceTranscriptChange = useCallback(
+    async (text, confidence, sttAlternatives) => {
+      const q = typeof text === 'string' ? text.trim() : '';
+      if (!q || q === voiceTranscript) return;
+      setVoiceTranscript(q);
+      setVoiceConfidence(confidence || 0);
+      setSearchQuery(q);
+      const { summary, matches, selectedMatchId } = await resolveVoiceDestination(q, confidence, sttAlternatives);
+      setVoiceMatches(matches);
+      setVoiceSelectedMatchId(selectedMatchId);
+      setVoiceRouteSummary(summary);
+      try {
+        speak(summary.spokenSummary);
+      } catch (_) {}
+    },
+    [resolveVoiceDestination, voiceTranscript, speak]
   );
 
   const handleVoiceConfirm = useCallback(
-    async ({ transcript, routeSummary, targetCoordinates }) => {
+    async ({ transcript, routeSummary, destination, targetCoordinates }) => {
       const q = transcript || voiceTranscript;
       setShowVoiceSummary(false);
       if (!q) return;
-      const all = [...dbNodes, ...recentDestinations];
-      const lowerQ = q.toLowerCase();
-      let best = null;
-      let bestScore = -1;
-      for (const dest of all) {
-        const titleLower = dest.title.toLowerCase();
-        let score = 0;
-        if (titleLower === lowerQ) score = 3;
-        else if (titleLower.includes(lowerQ) || lowerQ.includes(titleLower)) score = 2;
-        else if (titleLower.split(' ').some((w) => lowerQ.includes(w) || w.includes(lowerQ))) score = 1;
-        if (score > bestScore) {
-          bestScore = score;
-          best = dest;
-        }
+
+      // Prefer the destination resolved/selected in the voice screen; fall
+      // back to re-ranking the confirmed transcript (covers re-records).
+      let best = destination || voiceDestinationRef.current || null;
+      if (!best) {
+        const gazetteerResults = SRI_LANKA_GAZETTEER.map((p) => ({
+          id: `gz_${p.name}`,
+          title: p.name,
+          aliases: p.aliases,
+          city: p.city,
+          lat: p.lat,
+          lng: p.lng,
+          source: 'gazetteer',
+        }));
+        best = rankPlaces(q, [...dbNodes, ...recentDestinations, ...gazetteerResults])[0] || null;
       }
+
       if (best?.lat && best?.lng) {
         try {
           speak(`Confirmed. Navigating to ${best.title}`);
         } catch (_) {}
-        // Reuse current BaseMap pipeline — draws polyline via tapRoute (SPT-57)
-        await handleMapTap({ latitude: best.lat, longitude: best.lng });
-        handleSelectDestination(best);
+        // Single route path: handleSelectDestination → handleMapTap (exact
+        // coords for resolved places) + saves recents + detail card.
+        await handleSelectDestination(best);
         // Also set turn-by-turn active route for develop SPT-103 if state exists
         if (typeof setActiveNavRoute === 'function' && typeof setIsTurnByTurnActive === 'function') {
           const destTitle = routeSummary?.destName || best.title;
@@ -834,7 +974,7 @@ const UnityMapScreen = () => {
           speak(`Confirmed. Navigating to ${best.title}`);
         } catch (_) {}
       } else if (targetCoordinates) {
-        // Fallback to develop synthetic targetCoordinates when no fuzzy best
+        // Fallback to develop synthetic targetCoordinates when nothing resolved
         const destTitle = routeSummary?.destName || transcript || 'Selected Destination';
         const originLat = location?.latitude ?? 6.9271;
         const originLng = location?.longitude ?? 79.8612;
@@ -865,7 +1005,7 @@ const UnityMapScreen = () => {
         }
       }
     },
-    [voiceTranscript, dbNodes, recentDestinations, handleSelectDestination, handleMapTap, speak, location, tapRoute]
+    [voiceTranscript, dbNodes, recentDestinations, handleSelectDestination, speak, location, tapRoute]
   );
 
   const handleVoiceCancel = useCallback(() => {
@@ -950,6 +1090,14 @@ const UnityMapScreen = () => {
     }, 500);
     return () => clearTimeout(timer);
   }, [searchQuery, searchOrigin]);
+
+  // STT phrase hints: recents + campus nodes first (most relevant), filled out
+  // with the static gazetteer. Capped at 80 — huge hint lists hurt latency.
+  const searchHints = useMemo(() => {
+    const recents = recentDestinations.map((d) => d.title).filter(Boolean);
+    const nodes = dbNodes.map((d) => d.title).filter(Boolean);
+    return [...recents.slice(0, 15), ...nodes.slice(0, 15), ...GAZETTEER_NAMES].slice(0, 80);
+  }, [recentDestinations, dbNodes]);
 
   // Combined and filtered destinations (DB nodes + real recent searches)
   const filteredDestinations = useMemo(() => {
@@ -2831,7 +2979,7 @@ const UnityMapScreen = () => {
         onRequestClose={() => setShowLauncher(false)}
         accessibilityViewIsModal
       >
-        <AudioFirstLauncherScreen onNavigate={handleLauncherNavigate} />
+        <AudioFirstLauncherScreen onNavigate={handleLauncherNavigate} searchHints={searchHints} />
         <TouchableOpacity
           onPress={() => setShowLauncher(false)}
           style={[tw`absolute top-12 right-4 px-3 py-2 rounded-full bg-black/60`, isHighContrast && { borderWidth: 2, borderColor: '#FFFFFF', backgroundColor: '#000000' }]}
@@ -2854,6 +3002,11 @@ const UnityMapScreen = () => {
         <VoiceNavigationScreen
           initialTranscript={voiceTranscript}
           routeSummary={voiceRouteSummary}
+          matches={voiceMatches}
+          selectedMatchId={voiceSelectedMatchId}
+          onSelectMatch={handleVoiceMatchSelect}
+          onTranscriptChange={handleVoiceTranscriptChange}
+          searchHints={searchHints}
           onConfirm={handleVoiceConfirm}
           onCancel={handleVoiceCancel}
         />

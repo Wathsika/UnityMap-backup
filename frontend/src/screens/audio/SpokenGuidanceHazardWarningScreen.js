@@ -20,7 +20,7 @@ export const SpokenGuidanceHazardWarningScreen = ({
   onReprompt,
   onDismiss,
 }) => {
-  const { palette, borderWidth, isHighContrast, isReduceMotionEnabled } = useTheme();
+  const { palette, borderWidth, isHighContrast, isReduceMotionEnabled, preferredSTTLocale } = useTheme();
   const { speak, stop: stopSpeak, isSpeaking } = useSpeech();
   const { isListening, transcript, interimTranscript, start, stop: stopListening } = useSpeechRecognition();
 
@@ -116,7 +116,7 @@ export const SpokenGuidanceHazardWarningScreen = ({
     try {
       // small delay then start listening again
       setTimeout(async () => {
-        try { await start('en'); } catch (_) {}
+        try { await start(preferredSTTLocale || 'en'); } catch (_) {}
         if (onReprompt) onReprompt();
       }, 900);
     } catch (_) {
