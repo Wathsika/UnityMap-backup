@@ -17,6 +17,18 @@ export const AudioFirstLauncherScreen = ({ onNavigate, searchHints = [] }) => {
   const { speak } = useSpeech();
   const { isSupported, isListening, transcript, interimTranscript, confidence, alternatives, error, start, stop } = useSpeechRecognition();
   const hasAnnouncedRef = useRef(false);
+  const fallbackSpeakTimeoutRef = useRef(null);
+
+  // Clear any pending fallback-speak timeout on unmount
+  useEffect(() => {
+    const ref = fallbackSpeakTimeoutRef;
+    return () => {
+      if (ref.current) {
+        clearTimeout(ref.current);
+        ref.current = null;
+      }
+    };
+  }, []);
 
   // Auto-detect TalkBack/VoiceOver on launch and auto-prompt exact phrase
   useEffect(() => {
@@ -81,7 +93,8 @@ export const AudioFirstLauncherScreen = ({ onNavigate, searchHints = [] }) => {
       // so the recognizer biases toward real place names.
       await start(locale, { contextualStrings: searchHints });
     } catch (e) {
-      setTimeout(() => {
+      fallbackSpeakTimeoutRef.current = setTimeout(() => {
+        fallbackSpeakTimeoutRef.current = null;
         try { speak(LAUNCHER_PHRASE); } catch (_) {}
       }, 300);
     }

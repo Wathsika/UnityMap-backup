@@ -60,7 +60,7 @@ class AuthService {
     // drops the user back to the login screen instead of showing a broken portal.
     setUnauthorizedHandler(() => {
       if (this.currentUser) {
-        console.warn('[AuthService] Session rejected by server — signing out.');
+        if (__DEV__) console.warn('[AuthService] Session rejected by server — signing out.');
         this.logout();
       }
     });
@@ -83,7 +83,7 @@ class AuthService {
       try {
         listener(this.currentUser);
       } catch (err) {
-        console.warn('[AuthService] Listener notification error:', err);
+        if (__DEV__) console.warn('[AuthService] Listener notification error:', err);
       }
     });
   }
@@ -123,7 +123,7 @@ class AuthService {
         }
       }
     } catch (err) {
-      console.warn('[AuthService] Error loading stored session:', err);
+      if (__DEV__) console.warn('[AuthService] Error loading stored session:', err);
     }
     this.currentUser = null;
     this.isInitialized = true;
@@ -295,7 +295,7 @@ class AuthService {
     try {
       await AsyncStorage.removeItem(STORAGE_SESSION_KEY);
     } catch (err) {
-      console.warn('[AuthService] Error clearing session from storage:', err);
+      if (__DEV__) console.warn('[AuthService] Error clearing session from storage:', err);
     }
     this.notify();
   }

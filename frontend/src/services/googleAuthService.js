@@ -14,7 +14,11 @@ import * as AuthSession from 'expo-auth-session';
 import { GOOGLE_CONFIG, isGoogleConfigured } from '../config/oauth';
 
 // Ensure any completed web auth session redirects properly
-WebBrowser.maybeCompleteAuthSession();
+try {
+  WebBrowser.maybeCompleteAuthSession();
+} catch (_) {
+  // No-op: session completion is a web-only concern; never block module load.
+}
 
 // Google OAuth Discovery Endpoints
 const GOOGLE_DISCOVERY = {
@@ -177,11 +181,11 @@ class GoogleAuthService {
       }
       return await this.signInNative(clientId);
     } catch (err) {
-      console.warn('[GoogleAuthService] OAuth error, checking dev fallback:', err.message);
-      if (err.message.includes('cancelled')) {
+      if (__DEV__) console.warn('[GoogleAuthService] OAuth error, checking dev fallback:', err?.message);
+      if (String(err?.message || err).includes('cancelled')) {
         throw err;
       }
-      return await this.handleDevSimulator(err.message);
+      return await this.handleDevSimulator(String(err?.message || err));
     }
   }
 

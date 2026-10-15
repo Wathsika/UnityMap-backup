@@ -62,7 +62,7 @@ export const RootNavigator = () => {
   }
 
   // 2. Role-Based Navigation Routing
-  const role = (currentUser.role || '').toUpperCase().trim();
+  const role = String(currentUser.role ?? '').toUpperCase().trim();
   const isSuper = !!currentUser.isSuperAdmin || currentUser.email === 'admin@unitymap.com';
 
   // Explicitly ensure REGULAR_USER always routes to UnityMapScreen

@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Platform } from 'react-native';
 import { getPalette, getBorderWidth, palettes } from './tokens';
 import {
@@ -35,11 +35,23 @@ export const ThemeProvider = ({ children }) => {
   const [isReduceMotionEnabled, setIsReduceMotionEnabled] = useState(false);
   const [isAudioLauncherEnabled, setIsAudioLauncherEnabled] = useState(false);
   const [preferredSTTLocale, setPreferredSTTLocaleState] = useState('en');
+  const themeHydratedRef = useRef(false);
 
   useEffect(() => {
-    loadHighContrast().then(setIsHighContrast);
-    loadAudioLauncherEnabled().then(setIsAudioLauncherEnabled);
-    loadPreferredSTTLocale().then(setPreferredSTTLocaleState);
+    Promise.all([
+      loadHighContrast(),
+      loadAudioLauncherEnabled(),
+      loadPreferredSTTLocale(),
+    ])
+      .then(([hc, al, locale]) => {
+        setIsHighContrast(hc);
+        setIsAudioLauncherEnabled(al);
+        setPreferredSTTLocaleState(locale);
+      })
+      .catch(() => {})
+      .finally(() => {
+        themeHydratedRef.current = true;
+      });
   }, []);
 
   // Detect TalkBack / VoiceOver on launch and subscribe to OS changes
@@ -96,11 +108,7 @@ export const ThemeProvider = ({ children }) => {
   }, []);
 
   const toggleHighContrast = useCallback(() => {
-    setIsHighContrast((prev) => {
-      const next = !prev;
-      saveHighContrast(next);
-      return next;
-    });
+    setIsHighContrast((prev) => !prev);
   }, []);
 
   // Auto-enable Audio Launcher when OS TalkBack/VoiceOver turns on — user can still turn it off manually afterwards, persists across restarts
@@ -125,12 +133,19 @@ export const ThemeProvider = ({ children }) => {
   }, []);
 
   const toggleAudioLauncher = useCallback(() => {
-    setIsAudioLauncherEnabled((prev) => {
-      const next = !prev;
-      saveAudioLauncherEnabled(next);
-      return next;
-    });
+    setIsAudioLauncherEnabled((prev) => !prev);
   }, []);
+
+  // Persist toggles outside the state updaters (updaters must be pure).
+  // Skip until hydrated so the mount-run doesn't clobber stored values with defaults.
+  useEffect(() => {
+    if (!themeHydratedRef.current) return;
+    saveHighContrast(isHighContrast);
+  }, [isHighContrast]);
+  useEffect(() => {
+    if (!themeHydratedRef.current) return;
+    saveAudioLauncherEnabled(isAudioLauncherEnabled);
+  }, [isAudioLauncherEnabled]);
 
   const setPreferredSTTLocale = useCallback((locale) => {
     setPreferredSTTLocaleState(locale);

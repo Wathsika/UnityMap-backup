@@ -39,7 +39,7 @@ export const fetchTriageQueue = async ({
       return response.data;
     }
   } catch (error) {
-    console.warn('[triageService] Error fetching live triage queue:', error.message);
+    if (__DEV__) console.warn('[triageService] Error fetching live triage queue:', error.message);
   }
 
   // If unreachable or empty, return empty real structure (NO fake dummy reports)
@@ -63,7 +63,7 @@ export const fetchTriageMetrics = async (wardId = 'CMC-W01') => {
       return response.data;
     }
   } catch (error) {
-    console.warn('[triageService] Error fetching triage metrics:', error.message);
+    if (__DEV__) console.warn('[triageService] Error fetching triage metrics:', error.message);
   }
 
   return {
@@ -89,7 +89,7 @@ export const fetchReportDetails = async (reportId, wardId = 'CMC-W01') => {
       return response.data;
     }
   } catch (error) {
-    console.warn('[triageService] Error fetching report details:', error.message);
+    if (__DEV__) console.warn('[triageService] Error fetching report details:', error.message);
   }
 
   const runtimeFound = RUNTIME_REPORTS.find((r) => r._id === reportId);

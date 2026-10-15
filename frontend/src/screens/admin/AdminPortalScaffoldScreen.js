@@ -107,7 +107,7 @@ export const AdminPortalScaffoldScreen = () => {
         if (!isMounted) return;
         // Distinguish "no data" from "backend unreachable" — a silent catch left
         // the dashboard rendering zeros, which read as a genuinely perfect ward.
-        console.warn('[AdminPortalScaffold] Failed to load live metrics:', err.message);
+        if (__DEV__) console.warn('[AdminPortalScaffold] Failed to load live metrics:', err.message);
         setWardMetrics((prev) => ({ ...prev, isLoading: false, hasError: true }));
       }
     };

@@ -79,7 +79,7 @@ export const searchExternalPlaces = async (query, origin, options = {}) => {
   } catch (err) {
     // Throw (don't swallow): the caller distinguishes "proxy unreachable"
     // (banner) from "200 with zero hits" (no-matches hint).
-    console.warn('[placeSearchService] external search failed, using local results:', err?.message || err);
+    if (__DEV__) console.warn('[placeSearchService] external search failed, using local results:', err?.message || err);
     const proxyError = new Error('Place search unavailable');
     proxyError.cause = err;
     proxyError.isProxyUnreachable = true;
@@ -181,7 +181,7 @@ export const searchLocalPlaces = async (query, origin, options = {}) => {
         };
       });
   } catch (err) {
-    console.warn('[placeSearchService] local search failed:', err?.message || err);
+    if (__DEV__) console.warn('[placeSearchService] local search failed:', err?.message || err);
     return [];
   }
 };
@@ -221,7 +221,7 @@ export const getLocalPlaceById = async (placeId) => {
       boundingbox: null,
     };
   } catch (err) {
-    console.warn('[placeSearchService] getLocalPlaceById failed:', err?.message || err);
+    if (__DEV__) console.warn('[placeSearchService] getLocalPlaceById failed:', err?.message || err);
     return null;
   }
 };

@@ -167,6 +167,9 @@ export const LiveTurnByTurnNavigationScreen = ({
   // Navigation State
   const [isNavigating, setIsNavigating] = useState(true);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  // Mirror of currentStepIndex for use inside the simulation interval without
+  // re-creating the timer (setState updaters must stay pure).
+  const stepIndexRef = useRef(0);
   const [isVoiceMuted, setIsVoiceMuted] = useState(false);
   const [isStepsSheetOpen, setIsStepsSheetOpen] = useState(false);
   const [isSimulating, setIsSimulating] = useState(false);
@@ -459,21 +462,27 @@ export const LiveTurnByTurnNavigationScreen = ({
     }
   }, [isNavigating, currentStepIndex]);
 
+  // Keep the ref mirror in sync when the index changes from any source
+  // (simulation interval, Next/Prev buttons, GPS advance).
+  useEffect(() => {
+    stepIndexRef.current = currentStepIndex;
+  }, [currentStepIndex]);
+
   // Simulation Timer
   useEffect(() => {
     let timer = null;
     if (isNavigating && isSimulating && !hasArrived) {
       timer = setInterval(() => {
-        setCurrentStepIndex((prev) => {
-          if (prev + 1 >= navigationSteps.length) {
-            setIsSimulating(false);
-            setHasArrived(true);
-            return prev;
-          }
-          const next = prev + 1;
-          announceStep(navigationSteps[next], next);
-          return next;
-        });
+        const prev = stepIndexRef.current;
+        if (prev + 1 >= navigationSteps.length) {
+          setIsSimulating(false);
+          setHasArrived(true);
+          return;
+        }
+        const next = prev + 1;
+        stepIndexRef.current = next;
+        setCurrentStepIndex(next);
+        announceStep(navigationSteps[next], next);
       }, 5500);
     }
     return () => {

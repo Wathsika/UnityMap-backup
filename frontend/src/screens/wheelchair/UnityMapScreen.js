@@ -160,6 +160,7 @@ const UnityMapScreen = () => {
       if (typeof val === 'boolean') {
         setIsWheelchairAccessible(val);
       }
+      wheelchairHydratedRef.current = true;
     });
 
     loadRecentSearches().then((saved) => {
@@ -185,38 +186,33 @@ const UnityMapScreen = () => {
             setIsBackendConnected(true);
           }
         } catch (e) {
-          console.warn('[UnityMapScreen] Health check failed:', e.message);
+          if (__DEV__) console.warn('[UnityMapScreen] Health check failed:', e.message);
           if (isMounted) setIsBackendConnected(false);
         }
 
         // Fetch all 4 collections in parallel
         const [nodesRes, obstaclesRes, pathwaysRes, elevatorsRes] = await Promise.all([
           getNodes().catch((err) => {
-            console.error('[UnityMapScreen] Nodes fetch error:', err.message);
+            if (__DEV__) console.error('[UnityMapScreen] Nodes fetch error:', err.message);
             return { data: [] };
           }),
           getObstacles(true).catch((err) => {
-            console.error('[UnityMapScreen] Obstacles fetch error:', err.message);
+            if (__DEV__) console.error('[UnityMapScreen] Obstacles fetch error:', err.message);
             return { data: [] };
           }),
           getPathways().catch((err) => {
-            console.error('[UnityMapScreen] Pathways fetch error:', err.message);
+            if (__DEV__) console.error('[UnityMapScreen] Pathways fetch error:', err.message);
             return { data: [] };
           }),
           getElevatorOverview().catch((err) => {
-            console.error('[UnityMapScreen] Elevators fetch error:', err.message);
+            if (__DEV__) console.error('[UnityMapScreen] Elevators fetch error:', err.message);
             return { data: [] };
           }),
         ]);
 
         if (!isMounted) return;
 
-        console.log('[UnityMapScreen] Live Database Fetch Completed:', {
-          nodes: nodesRes?.data?.length || 0,
-          obstacles: obstaclesRes?.data?.length || 0,
-          pathways: pathwaysRes?.data?.length || 0,
-          elevators: elevatorsRes?.data?.length || 0,
-        });
+        if (__DEV__) console.log('[UnityMapScreen] Live Database Fetch Completed:', { nodes: nodesRes?.data?.length || 0, obstacles: obstaclesRes?.data?.length || 0, pathways: pathwaysRes?.data?.length || 0, elevators: elevatorsRes?.data?.length || 0, });
 
         // All 4 fetches failed (backend unreachable) → show the offline banner
         // instead of a silent empty map. Individual .catch() above swallow the
@@ -303,7 +299,7 @@ const UnityMapScreen = () => {
           setDbElevators(liveElevators);
         }
       } catch (err) {
-        console.error('[UnityMapScreen] Critical load error:', err);
+        if (__DEV__) console.error('[UnityMapScreen] Critical load error:', err);
         if (isMounted) setDataError(err.message || 'Failed to load database features');
       } finally {
         if (isMounted) setIsLoadingData(false);
@@ -326,12 +322,16 @@ const UnityMapScreen = () => {
 
   // Handle Wheelchair Accessible Toggle
   const handleToggleWheelchair = useCallback(() => {
-    setIsWheelchairAccessible((prev) => {
-      const next = !prev;
-      saveWheelchairAccessible(next);
-      return next;
-    });
+    setIsWheelchairAccessible((prev) => !prev);
   }, []);
+
+  // Persist outside the state updater (updaters must be pure — no side effects).
+  // Skip until the stored value has been hydrated to avoid overwriting it with the default.
+  const wheelchairHydratedRef = React.useRef(false);
+  useEffect(() => {
+    if (!wheelchairHydratedRef.current) return;
+    saveWheelchairAccessible(isWheelchairAccessible);
+  }, [isWheelchairAccessible]);
 
   // Recenter map on user location
   const handleRecenter = useCallback(async () => {
@@ -539,7 +539,7 @@ const UnityMapScreen = () => {
         safetyStatus: status,
       });
     } catch (err) {
-      console.warn('[UnityMapScreen] Tap route error:', err.message);
+      if (__DEV__) console.warn('[UnityMapScreen] Tap route error:', err.message);
       const directMeters = origin
         ? calculateHaversineDistance(origin.latitude, origin.longitude, destination.latitude, destination.longitude)
         : 0;
@@ -1101,7 +1101,13 @@ const UnityMapScreen = () => {
 
   // Combined and filtered destinations (DB nodes + real recent searches)
   const filteredDestinations = useMemo(() => {
-    const all = [...dbNodes, ...recentDestinations.filter((r) => !dbNodes.some((d) => d.title === r.title))];
+    const seenIds = new Set(dbNodes.map((d) => d.id).filter(Boolean));
+    const all = [
+      ...dbNodes,
+      ...recentDestinations.filter(
+        (r) => !dbNodes.some((d) => d.title === r.title) && !seenIds.has(r.id)
+      ),
+    ];
     if (!searchQuery.trim()) {
       return all;
     }
@@ -1760,7 +1766,9 @@ const UnityMapScreen = () => {
                 <TouchableOpacity
                   onPress={() => {
                     // Retry load
-                    checkHealth().then((h) => setIsBackendConnected(h?.status === 'ok'));
+                    checkHealth()
+                      .then((h) => setIsBackendConnected(h?.status === 'ok'))
+                      .catch(() => setIsBackendConnected(false));
                   }}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   accessible

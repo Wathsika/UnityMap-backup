@@ -39,7 +39,8 @@ export const saveWheelchairAccessible = async (value) => {
 export const loadRecentSearches = async () => {
   try {
     const v = await AsyncStorage.getItem(RECENT_SEARCHES_KEY);
-    return v ? JSON.parse(v) : [];
+    const parsed = v ? JSON.parse(v) : [];
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }

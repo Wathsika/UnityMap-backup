@@ -155,24 +155,9 @@ export const RouteSelectionCard = ({
   });
 
   return (
-    <TouchableOpacity
-      activeOpacity={onCardPress ? 0.9 : 1}
-      onPress={onCardPress}
-      accessible
-      accessibilityRole="button"
-      accessibilityLabel={[
-        routeCode, title,
-        displayDistance ? `Distance ${displayDistance}` : null,
-        eta ? `ETA ${eta}` : null,
-        maxSlope ? `Max slope ${maxSlope}` : null,
-        slopeStatus,
-        liftStatus,
-        verificationStatus,
-        isSelected ? 'Selected route' : null,
-      ].filter(Boolean).join('. ')}
-      accessibilityState={{ selected: isSelected }}
+    <View
       style={[
-        tw`rounded-2xl p-4 my-2 border`,
+        tw`rounded-2xl my-2 border overflow-hidden`,
         {
           backgroundColor: isHighContrast ? '#000000' : isSelected ? '#1F2420' : '#1E1E1E',
           borderColor: isHighContrast ? '#FFFFFF' : isSelected ? '#2E8B57' : '#2D2D2D',
@@ -182,6 +167,24 @@ export const RouteSelectionCard = ({
         style,
       ]}
     >
+      <TouchableOpacity
+        activeOpacity={onCardPress ? 0.9 : 1}
+        onPress={onCardPress}
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel={[
+          routeCode, title,
+          displayDistance ? `Distance ${displayDistance}` : null,
+          eta ? `ETA ${eta}` : null,
+          maxSlope ? `Max slope ${maxSlope}` : null,
+          slopeStatus,
+          liftStatus,
+          verificationStatus,
+          isSelected ? 'Selected route' : null,
+        ].filter(Boolean).join('. ')}
+        accessibilityState={{ selected: isSelected }}
+        style={tw`pt-4 px-4 pb-3`}
+      >
       {/* ── 1. Route Header ─────────────────────────────────────────── */}
       <View style={tw`mb-3`}>
         {/* Route code badge + active indicator */}
@@ -365,6 +368,7 @@ export const RouteSelectionCard = ({
           </View>
         ) : null}
       </View>
+      </TouchableOpacity>
 
       {/* ── 4. Select Route Button ───────────────────────────────────── */}
       <TouchableOpacity
@@ -376,7 +380,7 @@ export const RouteSelectionCard = ({
         accessibilityHint="Selects this accessible route and launches navigation"
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         style={[
-          tw`flex-row items-center justify-center rounded-xl py-3 px-5 gap-2`,
+          tw`flex-row items-center justify-center rounded-xl py-3 mx-4 mb-4 gap-2`,
           isHighContrast
             ? { backgroundColor: palette.primary, borderColor: '#000000', borderWidth: 2, minHeight: 48 }
             : {
@@ -400,7 +404,7 @@ export const RouteSelectionCard = ({
         </Text>
         <MaterialIcons name="arrow-forward" size={19} color="#FFFFFF" />
       </TouchableOpacity>
-    </TouchableOpacity>
+    </View>
   );
 };
 

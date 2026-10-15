@@ -20,7 +20,7 @@ export const useSpeech = () => {
         try {
           announce(text);
         } catch (_) {
-          console.log(`[Announce]: ${text}`);
+          if (__DEV__) console.log(`[Announce]: ${text}`);
         }
         setTimeout(() => setIsSpeaking(false), 800);
         return;
@@ -42,7 +42,7 @@ export const useSpeech = () => {
           onError: () => setIsSpeaking(false),
         });
       } catch (e) {
-        console.log(`[TTS Speaking]: ${text}`, e?.message);
+        if (__DEV__) console.log(`[TTS Speaking]: ${text}`, e?.message);
         setTimeout(() => setIsSpeaking(false), 2000);
       }
     },

@@ -30,6 +30,24 @@ export const SpokenGuidanceHazardWarningScreen = ({
   // Visual waveform animated values (4 bars)
   const barAnims = useRef([...Array(4)].map(() => new Animated.Value(6))).current;
 
+  // Track pending timeouts so unmount clears them (prevents setState/speak after unmount)
+  const pendingTimeoutsRef = useRef([]);
+  const scheduleTimeout = (fn, ms) => {
+    const id = setTimeout(() => {
+      pendingTimeoutsRef.current = pendingTimeoutsRef.current.filter((t) => t !== id);
+      fn();
+    }, ms);
+    pendingTimeoutsRef.current.push(id);
+    return id;
+  };
+  useEffect(() => {
+    const timeouts = pendingTimeoutsRef;
+    return () => {
+      timeouts.current.forEach((id) => clearTimeout(id));
+      timeouts.current = [];
+    };
+  }, []);
+
   useEffect(() => {
     const shouldAnimate = (isListening || isSpeaking) && !isReduceMotionEnabled;
     let loops = [];
@@ -75,8 +93,8 @@ export const SpokenGuidanceHazardWarningScreen = ({
           if (isSevere) {
             // 5m severe: Heavy x3 — matches "missing tactile paving in 5m"
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-            setTimeout(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {}), 300);
-            setTimeout(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {}), 600);
+            scheduleTimeout(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {}), 300);
+            scheduleTimeout(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {}), 600);
             Vibration.vibrate([0, 500, 200, 500, 200, 500]);
           } else if (isModerate) {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -104,7 +122,7 @@ export const SpokenGuidanceHazardWarningScreen = ({
       const volume = tactile?.ttsOverrides?.volume ?? 1.0;
       try {
         // Slight delay to let haptic start before speech
-        setTimeout(() => speak(spokenText, { rate, pitch, volume }), 400);
+        scheduleTimeout(() => speak(spokenText, { rate, pitch, volume }), 400);
       } catch (_) {}
     }
   }, [showHazardOverlay, nearbyHazards, speak]);

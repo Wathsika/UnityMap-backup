@@ -34,7 +34,7 @@ export const useLocation = () => {
 
       if (status !== 'granted') {
         const msg = 'Location permission was denied. Please enable GPS in device settings.';
-        console.warn('[useLocation]', msg);
+        if (__DEV__) console.warn('[useLocation]', msg);
         setErrorMsg(msg);
         setLocation(DEFAULT_COORDINATES);
         setLoading(false);
@@ -42,7 +42,7 @@ export const useLocation = () => {
       }
 
       // 2. Fetch current GPS position
-      console.log('[useLocation] Requesting live device GPS coordinates...');
+      if (__DEV__) console.log('[useLocation] Requesting live device GPS coordinates...');
       const position = await Location.getCurrentPositionAsync({
         accuracy:
           Platform.OS === 'android'
@@ -58,7 +58,7 @@ export const useLocation = () => {
           heading: position.coords.heading,
           speed: position.coords.speed,
         };
-        console.log('[useLocation] Live mobile GPS coordinates received:', coords);
+        if (__DEV__) console.log('[useLocation] Live mobile GPS coordinates received:', coords);
         setLocation(coords);
         setLoading(false);
         return coords;
@@ -69,7 +69,7 @@ export const useLocation = () => {
       setLoading(false);
       return DEFAULT_COORDINATES;
     } catch (err) {
-      console.warn('[useLocation] GPS retrieval error:', err.message);
+      if (__DEV__) console.warn('[useLocation] GPS retrieval error:', err.message);
       setErrorMsg(err.message || 'Unable to retrieve device GPS location');
 
       // Attempt last known location as fallback
@@ -81,7 +81,7 @@ export const useLocation = () => {
             longitude: lastKnown.coords.longitude,
             accuracy: lastKnown.coords.accuracy,
           };
-          console.log('[useLocation] Using last known GPS position:', coords);
+          if (__DEV__) console.log('[useLocation] Using last known GPS position:', coords);
           setLocation(coords);
           setLoading(false);
           return coords;
@@ -133,7 +133,7 @@ export const useLocation = () => {
           );
         }
       } catch (e) {
-        console.warn('[useLocation] watchPositionAsync not active:', e.message);
+        if (__DEV__) console.warn('[useLocation] watchPositionAsync not active:', e.message);
       }
     };
 

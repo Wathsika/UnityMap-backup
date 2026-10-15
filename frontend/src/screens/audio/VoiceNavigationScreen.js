@@ -201,8 +201,10 @@ export const VoiceNavigationScreen = ({
           <Text {...textProps} style={[styles.cardTitle, getTextStyle('sm', { isHighContrast }), { color: palette.textPrimary }]}>
             Did you mean?
           </Text>
-          {matches.map((match) => {
-            const matchKey = match.id || match.placeId || match.title;
+          {matches.map((match, matchIdx) => {
+            // Composite key: title alone can collide across sources (gazetteer + Nominatim
+            // can return the same place name); append the index as a last resort.
+            const matchKey = match.id || match.placeId || `${match.title}-${match.lat ?? ''}-${match.lng ?? ''}-${matchIdx}`;
             const isSelected = matchKey === selectedId;
             return (
               <Pressable

@@ -76,9 +76,11 @@ export const TriageQueueScreen = ({ onBack, onSelectReport, selectedWardId: prop
 
   const activeWard = getWardById(selectedWardId);
 
-  const loadTriageData = useCallback(async () => {
+  const loadTriageData = useCallback(async (isCancelled) => {
     try {
-      console.log(`Fetching Triage Queue: ward=${selectedWardId} category=${selectedCategory} status=pending sortBy=${selectedSort}`);
+      if (__DEV__) {
+        console.log(`Fetching Triage Queue: ward=${selectedWardId} category=${selectedCategory} status=pending sortBy=${selectedSort}`);
+      }
       const [queueData, metricsData] = await Promise.all([
         fetchTriageQueue({
           wardId: selectedWardId,
@@ -90,7 +92,10 @@ export const TriageQueueScreen = ({ onBack, onSelectReport, selectedWardId: prop
         fetchTriageMetrics(selectedWardId),
       ]);
 
-      console.log(`Queue loaded: ${queueData?.reports?.length || 0} reports`);
+      if (isCancelled?.()) return;
+      if (__DEV__) {
+        console.log(`Queue loaded: ${queueData?.reports?.length || 0} reports`);
+      }
       if (queueData?.reports) {
         setReports(queueData.reports);
       }
@@ -98,11 +103,14 @@ export const TriageQueueScreen = ({ onBack, onSelectReport, selectedWardId: prop
         setMetrics(metricsData);
       }
     } catch (error) {
-      console.warn('[TriageQueueScreen] Error loading queue:', error.message);
+      if (isCancelled?.()) return;
+      if (__DEV__) console.warn('[TriageQueueScreen] Error loading queue:', error.message);
     } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-      setIsRecalculating(false);
+      if (!isCancelled?.()) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+        setIsRecalculating(false);
+      }
     }
   }, [selectedWardId, selectedCategory, selectedSort, minUrgency]);
 
@@ -114,8 +122,12 @@ export const TriageQueueScreen = ({ onBack, onSelectReport, selectedWardId: prop
   }, [propWardId]);
 
   useEffect(() => {
+    let cancelled = false;
     setIsLoading(true);
-    loadTriageData();
+    loadTriageData(() => cancelled).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [loadTriageData]);
 
   const onRefresh = () => {
@@ -195,7 +207,7 @@ export const TriageQueueScreen = ({ onBack, onSelectReport, selectedWardId: prop
         triage: updated?.triage,
       });
     } catch (err) {
-      console.warn('[TriageQueueScreen] Corroborate error:', err.message);
+      if (__DEV__) console.warn('[TriageQueueScreen] Corroborate error:', err.message);
     }
   };
 

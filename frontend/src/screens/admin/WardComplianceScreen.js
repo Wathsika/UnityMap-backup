@@ -40,14 +40,16 @@ export const WardComplianceScreen = ({ onBack, initialWardId }) => {
 
   const activeWard = getWardById(selectedWardId);
 
-  const loadCompliance = useCallback(async (wardId) => {
+  const loadCompliance = useCallback(async (wardId, isCancelled) => {
     setLoadError(null);
     try {
       const data = await fetchWardCompliance(wardId);
+      if (isCancelled?.()) return;
       if (data) {
         setComplianceData(data);
       }
     } catch (err) {
+      if (isCancelled?.()) return;
       // Surface the real reason instead of rendering stale or zeroed figures.
       setComplianceData(null);
       setLoadError(
@@ -56,14 +58,20 @@ export const WardComplianceScreen = ({ onBack, initialWardId }) => {
           : err?.message || 'Could not load ward compliance data from the server.'
       );
     } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+      if (!isCancelled?.()) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
     }
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     setIsLoading(true);
-    loadCompliance(selectedWardId);
+    loadCompliance(selectedWardId, () => cancelled).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [selectedWardId, loadCompliance]);
 
   const onRefresh = () => {

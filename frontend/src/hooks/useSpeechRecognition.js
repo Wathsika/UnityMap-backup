@@ -223,11 +223,17 @@ export const useSpeechRecognition = () => {
           } catch (_) {}
         });
         const errorSub = addListener('error', (event) => {
-          setError(event.error || event.message || 'unknown');
-          setIsListening(false);
+          try {
+            setError(event.error || event.message || 'unknown');
+            setIsListening(false);
+          } catch (_) {}
         });
-        const endSub = addListener('end', () => setIsListening(false));
-        const startSub = addListener('start', () => setIsListening(true));
+        const endSub = addListener('end', () => {
+          try { setIsListening(false); } catch (_) {}
+        });
+        const startSub = addListener('start', () => {
+          try { setIsListening(true); } catch (_) {}
+        });
         nativeListenersRef.current.push(resultSub, errorSub, endSub, startSub);
       }
 

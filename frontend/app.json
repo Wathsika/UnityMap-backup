@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "frontend",
+    "name": "UnityMap",
     "slug": "frontend",
     "scheme": "unitymap",
     "version": "1.0.0",
@@ -23,7 +23,6 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.VIBRATE"
       ],
-      "usesCleartextTraffic": true,
       "package": "com.anonymous.frontend"
     },
     "ios": {
@@ -36,7 +35,15 @@
     },
     "plugins": [
       "expo-speech-recognition",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {

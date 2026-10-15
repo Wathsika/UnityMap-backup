@@ -45,14 +45,7 @@ export const getHostAddress = () => {
     try {
       if (typeof __DEV__ !== 'undefined' && __DEV__) {
         const scriptURL = NativeModules?.SourceCode?.scriptURL;
-        console.log(
-          `[net] host sources platform=${Platform.OS} ` +
-          `expoConfig.hostUri=${Constants?.expoConfig?.hostUri || 'none'} ` +
-          `manifest.debuggerHost=${Constants?.manifest?.debuggerHost || 'none'} ` +
-          `scriptURL=${scriptURL || 'none'} ` +
-          `override=${typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_HOST ? 'set' : 'unset'} ` +
-          `appOwnership=${Constants?.appOwnership || 'unknown'}`
-        );
+        if (__DEV__) console.log( `[net] host sources platform=${Platform.OS} ` + `expoConfig.hostUri=${Constants?.expoConfig?.hostUri || 'none'} ` + `manifest.debuggerHost=${Constants?.manifest?.debuggerHost || 'none'} ` + `scriptURL=${scriptURL || 'none'} ` + `override=${typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_HOST ? 'set' : 'unset'} ` + `appOwnership=${Constants?.appOwnership || 'unknown'}` );
       }
     } catch {}
   }
@@ -230,7 +223,7 @@ export const warmApiHost = async () => {
       const explicit = explicitApiUrl();
       if (explicit) {
         if (await probeBase(explicit)) {
-          console.log(`[API] verified host: ${explicit} (EXPO_PUBLIC_API_URL)`);
+          if (__DEV__) console.log(`[API] verified host: ${explicit} (EXPO_PUBLIC_API_URL)`);
           return explicit;
         }
         return null;
@@ -249,7 +242,7 @@ export const warmApiHost = async () => {
           if (await probeBase(base)) {
             verifiedHost = { host, at: Date.now() };
             try { await AsyncStorage.setItem(VERIFIED_HOST_STORE_KEY, host); } catch {}
-            console.log(`[API] verified host: ${base}`);
+            if (__DEV__) console.log(`[API] verified host: ${base}`);
             return base;
           }
         }
@@ -421,7 +414,7 @@ export const apiRequest = async (endpoint, options = {}) => {
         503
       );
       unreachable.unreachable = true;
-      if (shouldLogWarn) {
+      if (__DEV__ && shouldLogWarn) {
         console.error(`[API Error] ${method} ${cleanEndpoint}: ${unreachable.message}`);
       }
       throw unreachable;
@@ -445,11 +438,9 @@ export const apiRequest = async (endpoint, options = {}) => {
       throw primaryErr;
     }
     if (!isRetryableNetworkError(primaryErr)) throw primaryErr;
-    if (shouldLogWarn) {
-      console.warn(
-        `[API Warning] Endpoint ${cleanEndpoint} unreachable at ${primaryUrl} (message=${primaryErr?.message} code=${primaryErr?.code || 'n/a'} status=${primaryErr?.status ?? 'n/a'}). Retrying fallback...`
-      );
-    }
+      if (__DEV__ && shouldLogWarn) {
+        console.warn( `[API Warning] Endpoint ${cleanEndpoint} unreachable at ${primaryUrl} (message=${primaryErr?.message} code=${primaryErr?.code || 'n/a'} status=${primaryErr?.status ?? 'n/a'}). Retrying fallback...` );
+      }
 
     // Try fallback port (5001) — same host (covers backend port-shift).
     // Skipped when it resolves to the same URL as primary (e.g. an
@@ -457,7 +448,7 @@ export const apiRequest = async (endpoint, options = {}) => {
     // identical URL would just double the wait and the confusing logs.
     if (fallbackUrl !== primaryUrl) {
       attemptedUrls.push(fallbackUrl);
-    } else if (shouldLogWarn) {
+    } else if (__DEV__ && shouldLogWarn) {
       console.warn(`[API] Fallback skipped for ${cleanEndpoint} (same URL as primary: ${primaryUrl})`);
     }
     if (fallbackUrl !== primaryUrl) {
@@ -495,20 +486,8 @@ export const apiRequest = async (endpoint, options = {}) => {
         }
       }
 
-      if (shouldLogWarn) {
-        console.error(
-          `[API Error] All connection attempts failed for ${cleanEndpoint}:`,
-          {
-            message: primaryErr?.message,
-            code: primaryErr?.code,
-            status: primaryErr?.status,
-            detail: primaryErr?.detail,
-            backendError: primaryErr?.backendError,
-            triedPrimary: primaryUrl,
-            triedFallback: fallbackUrl === primaryUrl ? '(skipped, same as primary)' : fallbackUrl,
-            attemptedUrls,
-          }
-        );
+      if (__DEV__ && shouldLogWarn) {
+        console.error( `[API Error] All connection attempts failed for ${cleanEndpoint}:`, { message: primaryErr?.message, code: primaryErr?.code, status: primaryErr?.status, detail: primaryErr?.detail, backendError: primaryErr?.backendError, triedPrimary: primaryUrl, triedFallback: fallbackUrl === primaryUrl ? '(skipped, same as primary)' : fallbackUrl, attemptedUrls, } );
       }
       throw primaryErr;
   }
@@ -640,7 +619,7 @@ export const getRoadRoute = async (originLng, originLat, destLng, destLat) => {
       };
     }
   } catch (err) {
-    console.warn('[API] OSRM road routing error:', err.message);
+    if (__DEV__) console.warn('[API] OSRM road routing error:', err.message);
   }
   return null;
 };

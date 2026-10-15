@@ -375,7 +375,10 @@ export const categorizeProximityFeatures = ({
     let coords = null;
     if (pw.geometry && Array.isArray(pw.geometry.coordinates) && pw.geometry.coordinates.length >= 2) {
       coords = pw.geometry.coordinates.map((c) => [c[1], c[0]]);
-    } else if (pw.startNode && pw.endNode && pw.startNode.location && pw.endNode.location) {
+    } else if (
+      pw.startNode?.location?.coordinates?.length >= 2 &&
+      pw.endNode?.location?.coordinates?.length >= 2
+    ) {
       coords = [
         [pw.startNode.location.coordinates[1], pw.startNode.location.coordinates[0]],
         [pw.endNode.location.coordinates[1], pw.endNode.location.coordinates[0]],

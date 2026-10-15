@@ -138,9 +138,15 @@ export const getWheelchairRouteOptions = async (originNodeId, destinationNodeId)
       liftStatus: operationalElev?.label || 'Lift Operational - North Wing',
       isLiftOperational: true,
       verificationStatus: 'Step-Free Route Verified',
-      coordinates: dbRouteData?.path?.length
-        ? dbRouteData.path.map((n) => [n.location.coordinates[1], n.location.coordinates[0]])
-        : coordsA,
+      coordinates: (() => {
+        const rawPath = dbRouteData?.path;
+        const validPath = Array.isArray(rawPath)
+          ? rawPath.filter((n) => Array.isArray(n?.location?.coordinates) && n.location.coordinates.length >= 2)
+          : [];
+        return validPath.length
+          ? validPath.map((n) => [n.location.coordinates[1], n.location.coordinates[0]])
+          : coordsA;
+      })(),
       color: '#2E8B57',
       accentColor: '#10B981',
       description: 'Fully paved step-free path adhering to ADA §405 standard with zero stairs.',

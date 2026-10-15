@@ -1,5 +1,5 @@
-import * as FileSystem from 'expo-file-system';
-import { getSpeechPrompts, getAudioCues, getNodes } from './api';
+import * as FileSystem from 'expo-file-system/legacy';
+import { getSpeechPrompts, getAudioCues, getNodes, getBaseUrl } from './api';
 import {
   saveSpeechPromptsCache,
   saveHazardCuesCache,
@@ -33,7 +33,7 @@ const cacheEarcons = async (cues) => {
     const remoteUrl = cue.earconUrl;
     if (!remoteUrl) continue;
     // Resolve full URL — backend may return relative path
-    const fullUrl = remoteUrl.startsWith('http') ? remoteUrl : `http://localhost:5000${remoteUrl}`;
+    const fullUrl = remoteUrl.startsWith('http') ? remoteUrl : `${getBaseUrl().replace(/\/api$/, '')}${remoteUrl}`;
     const fileName = remoteUrl.split('/').pop() || `${cue.cueCode}.mp3`;
     const localUri = EARCON_DIR + fileName;
 
@@ -49,7 +49,7 @@ const cacheEarcons = async (cues) => {
         nextManifest[cue.cueCode] = { localUri, remoteUrl, size: dlInfo.size || 0 };
       }
     } catch (e) {
-      console.warn('[offlineVoiceCache] earcon download failed', cue.cueCode, e?.message);
+      if (__DEV__) console.warn('[offlineVoiceCache] earcon download failed', cue.cueCode, e?.message);
     }
   }
 
@@ -74,7 +74,7 @@ export const warmCache = async () => {
       if (prompts.length === 0 && Array.isArray(all)) prompts = all.slice(0, 3);
       await saveSpeechPromptsCache(prompts, 1);
     } catch (e) {
-      console.warn('[offlineVoiceCache] prompts fetch failed', e?.message);
+      if (__DEV__) console.warn('[offlineVoiceCache] prompts fetch failed', e?.message);
     }
 
     let cues = [];
@@ -84,7 +84,7 @@ export const warmCache = async () => {
       cues = Array.isArray(all) ? all.slice(0, 3) : [];
       await saveHazardCuesCache(cues, 1);
     } catch (e) {
-      console.warn('[offlineVoiceCache] cues fetch failed', e?.message);
+      if (__DEV__) console.warn('[offlineVoiceCache] cues fetch failed', e?.message);
     }
 
     let nodes = [];
@@ -94,14 +94,14 @@ export const warmCache = async () => {
       nodes = Array.isArray(all) ? all.slice(0, 100) : [];
       await saveNodesCache(nodes);
     } catch (e) {
-      console.warn('[offlineVoiceCache] nodes fetch failed', e?.message);
+      if (__DEV__) console.warn('[offlineVoiceCache] nodes fetch failed', e?.message);
     }
 
     const earconManifest = await cacheEarcons(cues);
 
     return { prompts, cues, nodes, earconManifest };
   } catch (e) {
-    console.warn('[offlineVoiceCache] warmCache error', e?.message);
+    if (__DEV__) console.warn('[offlineVoiceCache] warmCache error', e?.message);
     return null;
   }
 };

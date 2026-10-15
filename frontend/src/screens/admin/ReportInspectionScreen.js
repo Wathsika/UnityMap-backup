@@ -92,12 +92,18 @@ export const ReportInspectionScreen = ({
 
   useEffect(() => {
     if (reportId && (!initialReport || initialReport._id !== reportId)) {
+      let cancelled = false;
       setIsLoading(true);
       fetchReportDetails(reportId)
         .then((data) => {
-          if (data) setReport(data);
+          if (!cancelled && data) setReport(data);
         })
-        .finally(() => setIsLoading(false));
+        .finally(() => {
+          if (!cancelled) setIsLoading(false);
+        });
+      return () => {
+        cancelled = true;
+      };
     }
   }, [reportId, initialReport]);
 

@@ -671,7 +671,8 @@ export const ThreeTapReportScreen = ({ onSuccess, onNavigateToMap, navigation })
     (async () => {
       try {
         const draft = await loadVolunteerDraft();
-        if (!mounted || !draft) {
+        if (!mounted) return;
+        if (!draft) {
           setDraftLoaded(true);
           hasHydratedRef.current = true;
           return;

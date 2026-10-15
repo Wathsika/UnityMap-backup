@@ -34,16 +34,21 @@ export const UserManagementSection = ({ onBack, isStandalone = false }) => {
   const [roleFilter, setRoleFilter] = useState('ALL'); // 'ALL' | 'ADMIN' | 'REGULAR_USER'
   const [loadError, setLoadError] = useState(null);
 
-  const loadUsers = useCallback(async () => {
+  const loadUsers = useCallback(async (isCancelled) => {
+    // Only treat the argument as a cancellation checker when it actually is one
+    // (call sites like onPress={loadUsers} pass a press event object).
+    const cancelled = typeof isCancelled === 'function' ? isCancelled : null;
     setLoadError(null);
     try {
       const list = await authService.getUsers();
+      if (cancelled?.()) return;
       if (Array.isArray(list)) {
         setUsers(list);
       } else {
         setLoadError('The server returned an unexpected user directory.');
       }
     } catch (err) {
+      if (cancelled?.()) return;
       // Distinguish "denied / offline" from "genuinely no users" so the UI
       // never claims an empty directory when the request actually failed.
       setLoadError(
@@ -52,12 +57,18 @@ export const UserManagementSection = ({ onBack, isStandalone = false }) => {
           : err?.message || 'Could not reach the server to load the user directory.'
       );
     } finally {
-      setIsLoading(false);
+      if (!cancelled?.()) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    loadUsers();
+    let cancelled = false;
+    loadUsers(() => cancelled);
+    return () => {
+      cancelled = true;
+    };
   }, [loadUsers]);
 
   // Statistics
